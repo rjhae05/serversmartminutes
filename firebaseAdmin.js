@@ -1,18 +1,12 @@
+require('dotenv').config();
 const admin = require("firebase-admin");
 
-const serviceAccount = {
-  type: process.env.SMART_MINUTES_TYPE,
-  project_id: process.env.SMART_MINUTES_PROJECT_ID,
-  private_key_id: process.env.SMART_MINUTES_PRIVATE_KEY_ID,
-  private_key: process.env.SMART_MINUTES_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  client_email: process.env.SMART_MINUTES_CLIENT_EMAIL,
-  client_id: process.env.SMART_MINUTES_CLIENT_ID,
-  auth_uri: process.env.SMART_MINUTES_AUTH_URI,
-  token_uri: process.env.SMART_MINUTES_TOKEN_URI,
-  auth_provider_x509_cert_url: process.env.SMART_MINUTES_AUTH_PROVIDER_CERT_URL,
-  client_x509_cert_url: process.env.SMART_MINUTES_CLIENT_CERT_URL,
-};
+// parse the JSON string from env to object
+const serviceAccount = JSON.parse(process.env.SMART_MINUTES_DATABASE_KEY);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://smartminutesdatabase-default-rtdb.firebaseio.com"
 });
+
+module.exports = admin;

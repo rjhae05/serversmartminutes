@@ -1,8 +1,8 @@
 require('dotenv').config();
 const admin = require("firebase-admin");
 
-// parse the JSON string from env to object
-const serviceAccount = JSON.parse(process.env.SMART_MINUTES_DATABASE_KEY);
+// Parse the JSON service account key stored in the Railway environment variable
+const serviceAccount = JSON.parse(process.env.SMART_MINUTES_DATABASE_KEY.replace(/\\n/g, '\n'));
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),

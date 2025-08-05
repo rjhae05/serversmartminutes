@@ -18,22 +18,28 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+
+const openaiKey = process.env.OPENAI_API_KEY;
+const momKey = process.env.SMARTMINUTES_MOM_KEY;
+
+const smartMinutesKey = process.env.SMART_MINUTES_KEY;
+
 // ——— Google Cloud Config ———
 const projectId = 'speech-to-text-459913';
 const bucketName = 'smart-minutes-bucket';
-const keyPath = path.join(__dirname, 'smart-minutes-key.json');
+const keyPath = smartMinutesKey;
 process.env.GOOGLE_APPLICATION_CREDENTIALS = keyPath;
 
 const storage = new Storage({ projectId });
 const speechClient = new speech.SpeechClient();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: openaiKey });
 
 // ——— Multer Setup ———
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ——— Google Drive Auth Setup ———
 const auth = new google.auth.GoogleAuth({
-  keyFile: './smartminutesMoMkey.json',
+  keyFile: momKey,
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
 

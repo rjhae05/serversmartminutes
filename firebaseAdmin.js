@@ -1,7 +1,7 @@
 require('dotenv').config();
 const admin = require("firebase-admin");
 const fs = require("fs");
-const path = "/etc/secrets/smart-minutes-database-key"; // or .js or whatever extension is used
+const path = "/etc/secrets/smart-minutes-database-key.json"; // or .js or whatever extension is used
 
 let serviceAccount;
 
@@ -24,4 +24,5 @@ admin.initializeApp({
 });
 
 module.exports = admin;
+
 

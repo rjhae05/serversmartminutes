@@ -1,13 +1,6 @@
-require('dotenv').config();
-const admin = require("firebase-admin");
 
-// Parse the JSON service account key stored in the Railway environment variable
 const serviceAccount = JSON.parse(process.env.SMART_MINUTES_DATABASE_KEY);
-
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://smartminutesdatabase-default-rtdb.firebaseio.com"
+  credential: admin.credential.cert(serviceAccount)
 });
-
-module.exports = admin;
 

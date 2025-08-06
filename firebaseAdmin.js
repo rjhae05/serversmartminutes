@@ -1,8 +1,9 @@
 const admin = require("firebase-admin");
-
-const serviceAccount = JSON.parse(process.env.SMART_MINUTES_DATABASE_KEY);
+const serviceAccount = require("/etc/secrets/smart-minutes-database-key.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://smartminutesdatabase-default-rtdb.firebaseio.com"
 });
 
+module.exports = admin;

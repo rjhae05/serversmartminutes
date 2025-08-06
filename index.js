@@ -20,9 +20,10 @@ app.use(cors());
 
 
 const openaiKey = process.env.OPENAI_API_KEY;
-const momKey = process.env.SMARTMINUTES_MOM_KEY;
 
-const smartMinutesKey = process.env.SMART_MINUTES_KEY;
+const momKey = require("/etc/secrets/smartminutesMoMkey.json"); 
+
+const smartMinutesKey = require("/etc/secrets/smart-minutes-key.json"); 
 
 // ——— Google Cloud Config ———
 const projectId = 'speech-to-text-459913';
@@ -633,3 +634,4 @@ app.get('/allminutes/:id', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+

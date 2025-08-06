@@ -1,28 +1,20 @@
-require('dotenv').config();
 const admin = require("firebase-admin");
+const path = require("path");
 const fs = require("fs");
-const path = "/etc/secrets/smart-minutes-database-key.json"; // or .js or whatever extension is used
+
+let serviceAccountPath = path.join(__dirname, "../serviceAccountKey.json"); // fallback for local
+if (process.env.RENDER) {
+  serviceAccountPath = "/etc/secrets/smart-minutes-database-key";
+}
 
 let serviceAccount;
-
 try {
-  // Check if file exists
-  if (fs.existsSync(path)) {
-    const fileContents = fs.readFileSync(path, "utf8");
-    serviceAccount = JSON.parse(fileContents);
-  } else {
-    throw new Error(`File not found at path: ${path}`);
-  }
+  serviceAccount = require(serviceAccountPath);
 } catch (error) {
   console.error("❌ Failed to load Firebase credentials:", error);
-  process.exit(1); // Exit early to avoid undefined credential issues
+  process.exit(1);
 }
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://smartminutesdatabase-default-rtdb.firebaseio.com"
 });
-
-module.exports = admin;
-
-

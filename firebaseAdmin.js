@@ -4,7 +4,7 @@ const fs = require("fs");
 let serviceAccount;
 
 try {
-  const filePath = "/etc/secrets/smart-minutes-database-key"; // No `.json` extension if that's how it's stored
+  const filePath = "/etc/secrets/smart-minutes-database-key.json"; // No `.json` extension if that's how it's stored
   const fileContents = fs.readFileSync(filePath, "utf8");
   serviceAccount = JSON.parse(fileContents);
 } catch (error) {
@@ -25,3 +25,4 @@ try {
 }
 
 module.exports = admin;
+

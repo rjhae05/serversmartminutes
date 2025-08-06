@@ -1,20 +1,27 @@
 const admin = require("firebase-admin");
-const path = require("path");
 const fs = require("fs");
 
-let serviceAccountPath = path.join(__dirname, "../serviceAccountKey.json"); // fallback for local
-if (process.env.RENDER) {
-  serviceAccountPath = "/etc/secrets/smart-minutes-database-key";
-}
-
 let serviceAccount;
+
 try {
-  serviceAccount = require(serviceAccountPath);
+  const filePath = "/etc/secrets/smart-minutes-database-key"; // No `.json` extension if that's how it's stored
+  const fileContents = fs.readFileSync(filePath, "utf8");
+  serviceAccount = JSON.parse(fileContents);
 } catch (error) {
-  console.error("❌ Failed to load Firebase credentials:", error);
+  console.error("❌ Failed to load Firebase credentials:", error.message);
   process.exit(1);
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+try {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: "https://smartminutesdatabase-default-rtdb.firebaseio.com", // ✅ Realtime DB URL
+  });
+
+  console.log("✅ Firebase Admin initialized successfully with Realtime DB.");
+} catch (error) {
+  console.error("❌ Firebase Admin initialization failed:", error.message);
+  process.exit(1);
+}
+
+module.exports = admin;

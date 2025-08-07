@@ -40,7 +40,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // ——— Google Drive Auth Setup ———
 const auth = new google.auth.GoogleAuth({
-    keyFile: '/etc/secrets/smart-minutes-database-key.json',
+    keyFile: '/etc/secrets/smartminutesMoMkey.json',
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
 
@@ -634,5 +634,6 @@ app.get('/allminutes/:id', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
 
 

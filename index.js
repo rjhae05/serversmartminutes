@@ -14,7 +14,7 @@ const admin = require('./firebaseAdmin');
 const db = admin.database();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.use(express.json());
 app.use(cors());
 
@@ -634,6 +634,7 @@ app.get('/allminutes/:id', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
 
 
 

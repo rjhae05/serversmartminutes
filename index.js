@@ -190,63 +190,188 @@ app.get('/transcript', (req, res) => {
 });
 
 
-// Summarize
+// ——— Summarize Endpoint ———
 app.post('/summarize', async (req, res) => {
-  console.log('Summarize triggered');
   try {
     const transcript = fs.readFileSync('./transcript.txt', 'utf-8');
-    const { audioFileName = 'Transcription', userId } = req.body;
-    if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+    const audioFileName = req.body?.audioFileName || 'Transcription';
+    const mp3BaseName = audioFileName.replace(/\.[^/.]+$/, "");
 
-    const base = audioFileName.replace(/\.[^/.]+$/, '');
-    const templates = [
-      { name: 'Formal', dbField: 'formal_template', prompt: `...formal spread...\n${transcript}` },
-      { name: 'Simple', dbField: 'simple_template', prompt: `...simple bullet...\n${transcript}` },
-      { name: 'Detailed', dbField: 'detailed_template', prompt: `...detailed MoM...\n${transcript}` },
-    ];
-
-    const results = {};
-    const driveLinks = {};
-    for (const t of templates) {
-      const aiResponse = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [{ role: 'system', content: 'You format MoMs' }, { role: 'user', content: t.prompt }],
-        temperature: 0.4
+    const userId = req.body?.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing userId in request body.'
       });
-      const summary = aiResponse.choices[0].message.content;
-
-      const doc = new Document({
-        creator: 'Smart Minutes',
-        title: `${t.name} Minutes`,
-        sections: [{ children: summary.split('\n').map(l => new Paragraph(l)) }],
-      });
-      const buffer = await Packer.toBuffer(doc);
-
-      const Readable = require('stream').Readable;
-      const stream = new Readable();
-      stream.push(buffer);
-      stream.push(null);
-
-      const filename = `${base}-${t.name}-${Date.now()}.docx`;
-
-      const { data } = await driveClient.files.create({
-        requestBody: { name: filename, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', parents: [parentFolderId] },
-        media: { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: stream },
-        fields: 'id'
-      });
-      await driveClient.permissions.create({ fileId: data.id, requestBody: { role: 'reader', type: 'anyone' } });
-
-      const link = `https://drive.google.com/file/d/${data.id}/view?usp=sharing`;
-      driveLinks[t.dbField] = link;
-      results[t.name] = link;
     }
 
-    await db.ref(`summaries/${userId}`).push({ audioFileName, createdAt: admin.database.ServerValue.TIMESTAMP, ...driveLinks });
+    // Original, more complete prompts
+    const templates = [
+      {
+        name: 'Template-Formal',
+        dbField: 'formal_template',
+        prompt: `Summarize the following transcription and format it like this formal Minutes of the Meeting:
 
-    res.json({ success: true, results });
-  } catch (e) {
-    console.error('Summarize Error:', e);
-    res.status(500).json({ success: false, message: e.message });
+[MEETING NAME:]
+[DATE:]
+[TIME:]
+[VENUE:]
+[PRESENT:]
+
+[CALL TO ORDER:]
+[Who started the meeting and at what time.]
+
+[MATTERS ARISING:]
+• Bullet points of major topics.
+
+[MEETING AGENDA:]
+• Agenda Title
+   - Discussion points
+   - Action points
+
+[ANNOUNCEMENTS:]
+[List]
+
+[ADJOURNMENT:]
+[Closing remarks]
+
+Here is the transcription:
+"${transcript}"`
+      },
+      {
+        name: 'Template-Simple',
+        dbField: 'simple_template',
+        prompt: `Summarize and format this as a simple MoM:
+
+Meeting Title:
+Date:
+Time:
+Venue:
+Attendees:
+
+Key Points Discussed:
+- ...
+
+Action Items:
+- ...
+
+Closing Notes:
+"${transcript}"`
+      },
+      {
+        name: 'Template-Detailed',
+        dbField: 'detailed_template',
+        prompt: `Summarize this transcript into a detailed Minutes of the Meeting with:
+
+Meeting Information
+- Name
+- Date
+- Time
+- Venue
+- Participants
+
+Detailed Agenda:
+For each item:
+• Title
+• Discussions
+• Decisions
+• Action points
+
+Other Announcements:
+Closing:
+"${transcript}"`
+      }
+    ];
+
+    const results = [];
+    const summariesTable = {}; // Google Drive share links
+
+    for (const template of templates) {
+      const aiResponse = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant who formats meeting transcriptions.' },
+          { role: 'user', content: template.prompt },
+        ],
+        temperature: 0.4,
+      });
+
+      const summaryText = aiResponse.choices[0].message.content;
+
+      const doc = new Document({
+        creator: 'Smart Minutes App',
+        title: `Minutes of the Meeting - ${template.name}`,
+        description: 'Auto-generated summary of transcribed audio.',
+        sections: [
+          { children: summaryText.split('\n').map(line => new Paragraph(line)) },
+        ],
+      });
+
+      const fileName = `${mp3BaseName}-${template.name}-${Date.now()}.docx`;
+      const buffer = await Packer.toBuffer(doc);
+
+      const { Readable } = require('stream');
+      const bufferStream = new Readable();
+      bufferStream.push(buffer);
+      bufferStream.push(null);
+
+      const fileMetadata = {
+        name: fileName,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        parents: [parentFolderId],
+      };
+
+      const media = { mimeType: fileMetadata.mimeType, body: bufferStream };
+
+      const driveRes = await drive.files.create({
+        requestBody: fileMetadata,
+        media,
+        fields: 'id',
+      });
+
+      const fileId = driveRes.data.id;
+
+      await drive.permissions.create({
+        fileId,
+        requestBody: { role: 'reader', type: 'anyone' },
+      });
+
+      const publicLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
+
+      summariesTable[template.dbField] = publicLink;
+
+
+      results.push({
+        template: template.name,
+        link: publicLink,
+        
+      });
+
+      console.log(`✅ Created and uploaded: ${template.name}`);
+    }
+
+    // ✅ Save under userId → summaryId
+    const tableRef = db.ref(`summaries/${userId}`).push();
+    await tableRef.set({
+      audioFileName,
+      createdAt: admin.database.ServerValue.TIMESTAMP,
+      ...summariesTable
+    });
+
+    res.json({
+      success: true,
+      message: 'All templates processed, uploaded to Google Drive, and saved under user.',
+      results,
+      tableRecordId: tableRef.key,
+    });
+
+  } catch (error) {
+    console.error('❌ Error in /summarize:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during summarization or file handling.',
+      error: error.message,
+    });
   }
 });
 
@@ -268,6 +393,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -161,10 +161,15 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     fs.writeFileSync('./transcript.txt', cleaned);
     console.log('✅ Transcription completed and saved locally.');
 
-    res.json({ success: true, transcription: cleaned, audioFileName: original });
+    // Declare and assign JSON response object here
+    const jsonResponse = {
+      success: true,
+      transcription: cleaned,
+      audioFileName: original
+    };
 
     console.log('📦 Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
-
+    // Send response once
     res.json(jsonResponse);
     
   } catch (e) {
@@ -263,6 +268,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

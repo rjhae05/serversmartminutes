@@ -132,10 +132,9 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error during login' });
   }
 });
-
 // Transcribe
 app.post('/transcribe', upload.single('file'), async (req, res) => {
-  console.log('Transcribe triggered');
+  console.log('📝 Transcription request received');
   const { uid } = req.body;
   if (!req.file || !uid) return res.status(400).json({ success: false, message: 'File and UID required' });
 
@@ -143,22 +142,32 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     const original = req.file.originalname;
     const gcsFilename = `${Date.now()}-${original}`;
     const gcsUri = await uploadToGCS(req.file.buffer, gcsFilename);
+
+    console.log(`📤 Uploaded file: ${original}`);
+    console.log(`🎙️ Transcribing from: ${gcsUri}`);
+
     const rawTranscript = await transcribe(gcsUri);
     const cleaned = applyCorrections(rawTranscript);
+
+    // ✅ Print transcription output to console
+    console.log('\n📄 Transcription Output:\n');
+    console.log(cleaned);
+    console.log('\n📄 End of Transcription\n');
 
     const timestamp = Date.now();
     const newRef = db.ref(`transcriptions/${uid}`).push();
     await newRef.set({ filename: original, text: cleaned, gcsUri, status: 'Completed', createdAt: timestamp });
 
     fs.writeFileSync('./transcript.txt', cleaned);
-    console.log('Transcription done');
+    console.log('✅ Transcription completed and saved locally.');
 
     res.json({ success: true, transcription: cleaned, audioFileName: original });
   } catch (e) {
-    console.error('Transcription Error:', e);
+    console.error('❌ Transcription Error:', e);
     res.status(500).json({ success: false, message: e.message });
   }
 });
+
 
 // Summarize
 app.post('/summarize', async (req, res) => {
@@ -238,3 +247,4 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+

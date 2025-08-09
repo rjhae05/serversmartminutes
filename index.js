@@ -28,7 +28,7 @@ const smartMinutesKey = require("/etc/secrets/smart-minutes-key.json");
 // ——— Google Cloud Config ———
 const projectId = 'speech-to-text-459913';
 const bucketName = 'smart-minutes-bucket';
-const keyPath = smartMinutesKey;
+const keyPath = "/etc/secrets/smart-minutes-key.json";
 process.env.GOOGLE_APPLICATION_CREDENTIALS = keyPath;
 
 const storage = new Storage({ projectId });
@@ -634,6 +634,7 @@ app.get('/allminutes/:id', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
 
 
 

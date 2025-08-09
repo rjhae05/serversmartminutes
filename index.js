@@ -164,7 +164,7 @@ async function transcribeFromGCS(gcsUri) {
 
 let audioFileName;
 // ——— Transcribe Endpoint ———
-app.post('/transcribe', upload.single('audio'), async (req, res) => {
+app.post('/transcribe', upload.single('file'), async (req, res) => {
   const { uid } = req.body;
 
   if (!req.file || !uid) {
@@ -634,6 +634,7 @@ app.get('/allminutes/:id', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
 
 
 

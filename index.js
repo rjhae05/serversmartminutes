@@ -168,6 +168,17 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
   }
 });
 
+// ✅ Add this route to your server.js (or index.js)
+app.get('/transcript', (req, res) => {
+  try {
+    const transcript = fs.readFileSync('./transcript.txt', 'utf-8');
+    res.json({ success: true, transcription: transcript });
+  } catch (err) {
+    console.error('Error reading transcript.txt:', err);
+    res.status(500).json({ success: false, message: 'Could not read transcript file.' });
+  }
+});
+
 
 // Summarize
 app.post('/summarize', async (req, res) => {
@@ -247,4 +258,5 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 

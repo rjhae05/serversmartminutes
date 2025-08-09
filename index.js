@@ -3,7 +3,6 @@ const cors = require('cors');
 const multer = require('multer');
 const { Storage } = require('@google-cloud/storage');
 const speech = require('@google-cloud/speech').v1p1beta1;
-const path = require('path');
 const fs = require('fs');
 const { OpenAI } = require('openai');
 const { Document, Packer, Paragraph } = require('docx');
@@ -15,120 +14,79 @@ const db = admin.database();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.use(express.json());
 app.use(cors());
 
-
+// Keys and Config
 const openaiKey = process.env.OPENAI_API_KEY;
-
-const momKey = require("/etc/secrets/smartminutesMoMkey.json"); 
-
-const smartMinutesKey = require("/etc/secrets/smart-minutes-key.json"); 
-
-// ——— Google Cloud Config ———
 const projectId = 'speech-to-text-459913';
 const bucketName = 'smart-minutes-bucket';
-const keyPath = "/etc/secrets/smart-minutes-key.json";
-process.env.GOOGLE_APPLICATION_CREDENTIALS = keyPath;
+process.env.GOOGLE_APPLICATION_CREDENTIALS = '/etc/secrets/smart-minutes-key.json';
 
 const storage = new Storage({ projectId });
 const speechClient = new speech.SpeechClient();
 const openai = new OpenAI({ apiKey: openaiKey });
 
-// ——— Multer Setup ———
+// Multer
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ——— Google Drive Auth Setup ———
+// Google Drive setup
 const auth = new google.auth.GoogleAuth({
-    keyFile: '/etc/secrets/smartminutesMoMkey.json',
-  scopes: ['https://www.googleapis.com/auth/drive'],
+  keyFile: '/etc/secrets/smartminutesMoMkey.json',
+  scopes: ['https://www.googleapis.com/auth/drive']
 });
-
-let drive; // drive client will be initialized
-let parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr'; // replace with your folder ID
+let driveClient;
+const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
 
 (async () => {
-  const authClient = await auth.getClient();
-  drive = google.drive({ version: 'v3', auth: authClient });
-
-  // Test folder access on start
-  await testListFiles();
+  try {
+    const authClient = await auth.getClient();
+    driveClient = google.drive({ version: 'v3', auth: authClient });
+    await testDriveAccess();
+  } catch (e) {
+    console.error('Drive Auth Init Error:', e);
+  }
 })();
 
-// ——— Auto-correction Dictionary ———
+async function testDriveAccess() {
+  try {
+    const res = await driveClient.files.list({
+      q: `'${parentFolderId}' in parents`,
+      fields: 'files(id, name)',
+    });
+    console.log(res.data.files?.length 
+      ? `Drive folder accessible. Files: ${res.data.files.map(f => f.name).join(', ')}`
+      : 'Drive folder accessible but empty.'
+    );
+  } catch (e) {
+    console.error('Drive access test failed:', e.message);
+  }
+}
+
+// Auto corrections
 const corrections = {
   'Thank you, sir. Have a good day in the': 'Thank you sa pag attend',
-  'young': 'yoong',
-  // Add more substitutions here
+  young: 'yoong',
 };
-
 function applyCorrections(text) {
   for (const [wrong, correct] of Object.entries(corrections)) {
-    const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
-    text = text.replace(regex, correct);
+    text = text.replace(new RegExp(`\\b${wrong}\\b`, 'gi'), correct);
   }
   return text;
 }
 
-
-// ——— Test if service account can list files ———
-async function testListFiles() {
-  try {
-    const res = await drive.files.list({
-      q: `'${parentFolderId}' in parents`,
-      fields: 'files(id, name)',
-    });
-
-    if (!res.data.files.length) {
-      console.log('📂 Folder accessible but empty.');
-    } else {
-      console.log('✅ Folder accessible. Files:');
-      res.data.files.forEach(file => console.log(`📄 ${file.name} (ID: ${file.id})`));
-    }
-  } catch (err) {
-    console.error('❌ Cannot list files:', err.response?.data || err.message);
-  }
-}
-
-
-// ——— Firebase Login ———
-app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  const usersRef = db.ref('Users');
-
-  try {
-    const snapshot = await usersRef.once('value');
-    const users = snapshot.val();
-
-    for (const key in users) {
-      if (users[key].email === email && users[key].password === password) {
-        return res.status(200).json({ success: true, message: 'Login successful', uid: key });
-      }
-    }
-
-    return res.status(401).json({ success: false, message: 'Invalid email or password' });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-// ——— Upload to GCS ———
-async function uploadBufferToGCS(fileBuffer, gcsFileName) {
-  const bucket = storage.bucket(bucketName);
-  const file = bucket.file(gcsFileName);
-
-  await file.save(fileBuffer, {
+// Upload and Transcription
+async function uploadToGCS(buffer, filename) {
+  await storage.bucket(bucketName).file(filename).save(buffer, {
     metadata: { contentType: 'audio/mpeg' },
     resumable: false,
   });
-
-  console.log(`✅ Uploaded to gs://${bucketName}/${gcsFileName}`);
-  return `gs://${bucketName}/${gcsFileName}`;
+  console.log('Uploaded to GCS at:', filename);
+  return `gs://${bucketName}/${filename}`;
 }
 
-// ——— Transcription with Speaker Diarization ———
-async function transcribeFromGCS(gcsUri) {
+async function transcribe(gcsUri) {
   const request = {
     audio: { uri: gcsUri },
     config: {
@@ -141,316 +99,142 @@ async function transcribeFromGCS(gcsUri) {
       model: 'default',
     },
   };
-
-  const [operation] = await speechClient.longRunningRecognize(request);
-  const [response] = await operation.promise();
-
-  const result = response.results[response.results.length - 1];
-  const wordsInfo = result.alternatives[0].words;
-
+  const [op] = await speechClient.longRunningRecognize(request);
+  const [response] = await op.promise();
+  const wordsInfo = response.results.slice(-1)[0].alternatives[0].words;
   let transcript = '';
-  let currentSpeaker = null;
-
-  for (const wordInfo of wordsInfo) {
-    if (wordInfo.speakerTag !== currentSpeaker) {
-      currentSpeaker = wordInfo.speakerTag;
-      transcript += `\n\nSpeaker ${currentSpeaker}:\n`;
+  let current = null;
+  for (const w of wordsInfo) {
+    if (w.speakerTag !== current) {
+      current = w.speakerTag;
+      transcript += `\n\nSpeaker ${current}:\n`;
     }
-    transcript += wordInfo.word + ' ';
+    transcript += w.word + ' ';
   }
-
   return transcript.trim();
 }
 
-let audioFileName;
-// ——— Transcribe Endpoint ———
-app.post('/transcribe', upload.single('file'), async (req, res) => {
-  const { uid } = req.body;
+// Routes
 
-  if (!req.file || !uid) {
-    return res.status(400).json({ success: false, message: 'Missing file or user ID' });
-  }
+// Login
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ success: false, message: 'Email/password required' });
 
   try {
-    // ✅ Get original mp3 file name
-    audioFileName = req.file.originalname;
-   
-    const gcsFileName = `${Date.now()}-${audioFileName}`;
-    const gcsUri = await uploadBufferToGCS(req.file.buffer, gcsFileName);
-    const transcript = await transcribeFromGCS(gcsUri);
-    const cleanedTranscript = applyCorrections(transcript);
+    const snapshot = await db.ref('Users').once('value');
+    const userId = Object.entries(snapshot.val() || {}).find(([_, u]) => u.email === email && u.password === password)?.[0];
+    return userId
+      ? res.json({ success: true, message: 'Login successful', uid: userId })
+      : res.status(401).json({ success: false, message: 'Invalid credentials' });
+  } catch (e) {
+    console.error('Login Error:', e);
+    res.status(500).json({ success: false, message: 'Error during login' });
+  }
+});
+
+// Transcribe
+app.post('/transcribe', upload.single('file'), async (req, res) => {
+  console.log('Transcribe triggered');
+  const { uid } = req.body;
+  if (!req.file || !uid) return res.status(400).json({ success: false, message: 'File and UID required' });
+
+  try {
+    const original = req.file.originalname;
+    const gcsFilename = `${Date.now()}-${original}`;
+    const gcsUri = await uploadToGCS(req.file.buffer, gcsFilename);
+    const rawTranscript = await transcribe(gcsUri);
+    const cleaned = applyCorrections(rawTranscript);
 
     const timestamp = Date.now();
     const newRef = db.ref(`transcriptions/${uid}`).push();
-    await newRef.set({
-      filename: audioFileName,       // ✅ store original filename
-      text: cleanedTranscript,
-      gcsUri,
-      status: "✅ Transcription Complete",
-      createdAt: timestamp,
-    });
+    await newRef.set({ filename: original, text: cleaned, gcsUri, status: 'Completed', createdAt: timestamp });
 
-    // Save transcript locally
-    fs.writeFileSync('./transcript.txt', cleanedTranscript);
+    fs.writeFileSync('./transcript.txt', cleaned);
+    console.log('Transcription done');
 
-    res.json({ 
-      success: true, 
-      transcription: cleanedTranscript,
-      audioFileName: audioFileName   // ✅ include in response if frontend wants to save it
-    });
-  } catch (err) {
-    console.error('❌ Error:', err);
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, transcription: cleaned, audioFileName: original });
+  } catch (e) {
+    console.error('Transcription Error:', e);
+    res.status(500).json({ success: false, message: e.message });
   }
 });
 
-
-// ——— Summarize Endpoint ———
+// Summarize
 app.post('/summarize', async (req, res) => {
+  console.log('Summarize triggered');
   try {
     const transcript = fs.readFileSync('./transcript.txt', 'utf-8');
-    const audioFileName = req.body?.audioFileName || 'Transcription';
-    const mp3BaseName = audioFileName.replace(/\.[^/.]+$/, "");
+    const { audioFileName = 'Transcription', userId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
 
-    const userId = req.body?.userId;
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing userId in request body.'
-      });
-    }
-
-    // Original, more complete prompts
+    const base = audioFileName.replace(/\.[^/.]+$/, '');
     const templates = [
-      {
-        name: 'Template-Formal',
-        dbField: 'formal_template',
-        prompt: `Summarize the following transcription and format it like this formal Minutes of the Meeting:
-
-[MEETING NAME:]
-[DATE:]
-[TIME:]
-[VENUE:]
-[PRESENT:]
-
-[CALL TO ORDER:]
-[Who started the meeting and at what time.]
-
-[MATTERS ARISING:]
-• Bullet points of major topics.
-
-[MEETING AGENDA:]
-• Agenda Title
-   - Discussion points
-   - Action points
-
-[ANNOUNCEMENTS:]
-[List]
-
-[ADJOURNMENT:]
-[Closing remarks]
-
-Here is the transcription:
-"${transcript}"`
-      },
-      {
-        name: 'Template-Simple',
-        dbField: 'simple_template',
-        prompt: `Summarize and format this as a simple MoM:
-
-Meeting Title:
-Date:
-Time:
-Venue:
-Attendees:
-
-Key Points Discussed:
-- ...
-
-Action Items:
-- ...
-
-Closing Notes:
-"${transcript}"`
-      },
-      {
-        name: 'Template-Detailed',
-        dbField: 'detailed_template',
-        prompt: `Summarize this transcript into a detailed Minutes of the Meeting with:
-
-Meeting Information
-- Name
-- Date
-- Time
-- Venue
-- Participants
-
-Detailed Agenda:
-For each item:
-• Title
-• Discussions
-• Decisions
-• Action points
-
-Other Announcements:
-Closing:
-"${transcript}"`
-      }
+      { name: 'Formal', dbField: 'formal_template', prompt: `...formal spread...\n${transcript}` },
+      { name: 'Simple', dbField: 'simple_template', prompt: `...simple bullet...\n${transcript}` },
+      { name: 'Detailed', dbField: 'detailed_template', prompt: `...detailed MoM...\n${transcript}` },
     ];
 
-    const results = [];
-    const summariesTable = {}; // Google Drive share links
-
-    for (const template of templates) {
+    const results = {};
+    const driveLinks = {};
+    for (const t of templates) {
       const aiResponse = await openai.chat.completions.create({
         model: 'gpt-4',
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant who formats meeting transcriptions.' },
-          { role: 'user', content: template.prompt },
-        ],
-        temperature: 0.4,
+        messages: [{ role: 'system', content: 'You format MoMs' }, { role: 'user', content: t.prompt }],
+        temperature: 0.4
       });
-
-      const summaryText = aiResponse.choices[0].message.content;
+      const summary = aiResponse.choices[0].message.content;
 
       const doc = new Document({
-        creator: 'Smart Minutes App',
-        title: `Minutes of the Meeting - ${template.name}`,
-        description: 'Auto-generated summary of transcribed audio.',
-        sections: [
-          { children: summaryText.split('\n').map(line => new Paragraph(line)) },
-        ],
+        creator: 'Smart Minutes',
+        title: `${t.name} Minutes`,
+        sections: [{ children: summary.split('\n').map(l => new Paragraph(l)) }],
       });
-
-      const fileName = `${mp3BaseName}-${template.name}-${Date.now()}.docx`;
       const buffer = await Packer.toBuffer(doc);
 
-      const { Readable } = require('stream');
-      const bufferStream = new Readable();
-      bufferStream.push(buffer);
-      bufferStream.push(null);
+      const Readable = require('stream').Readable;
+      const stream = new Readable();
+      stream.push(buffer);
+      stream.push(null);
 
-      const fileMetadata = {
-        name: fileName,
-        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        parents: [parentFolderId],
-      };
+      const filename = `${base}-${t.name}-${Date.now()}.docx`;
 
-      const media = { mimeType: fileMetadata.mimeType, body: bufferStream };
-
-      const driveRes = await drive.files.create({
-        requestBody: fileMetadata,
-        media,
-        fields: 'id',
+      const { data } = await driveClient.files.create({
+        requestBody: { name: filename, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', parents: [parentFolderId] },
+        media: { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: stream },
+        fields: 'id'
       });
+      await driveClient.permissions.create({ fileId: data.id, requestBody: { role: 'reader', type: 'anyone' } });
 
-      const fileId = driveRes.data.id;
-
-      await drive.permissions.create({
-        fileId,
-        requestBody: { role: 'reader', type: 'anyone' },
-      });
-
-      const publicLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
-
-      summariesTable[template.dbField] = publicLink;
-
-
-      results.push({
-        template: template.name,
-        link: publicLink,
-        
-      });
-
-      console.log(`✅ Created and uploaded: ${template.name}`);
+      const link = `https://drive.google.com/file/d/${data.id}/view?usp=sharing`;
+      driveLinks[t.dbField] = link;
+      results[t.name] = link;
     }
 
-    // ✅ Save under userId → summaryId
-    const tableRef = db.ref(`summaries/${userId}`).push();
-    await tableRef.set({
-      audioFileName,
-      createdAt: admin.database.ServerValue.TIMESTAMP,
-      ...summariesTable
-    });
+    await db.ref(`summaries/${userId}`).push({ audioFileName, createdAt: admin.database.ServerValue.TIMESTAMP, ...driveLinks });
 
-    res.json({
-      success: true,
-      message: 'All templates processed, uploaded to Google Drive, and saved under user.',
-      results,
-      tableRecordId: tableRef.key,
-    });
-
-  } catch (error) {
-    console.error('❌ Error in /summarize:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error during summarization or file handling.',
-      error: error.message,
-    });
+    res.json({ success: true, results });
+  } catch (e) {
+    console.error('Summarize Error:', e);
+    res.status(500).json({ success: false, message: e.message });
   }
 });
 
-
-// ——— Fetch all minutes by userId ———
+// Fetch summaries
 app.get('/allminutes/:id', async (req, res) => {
-  try {
-    const userId = req.params.id;
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing user ID in URL parameter.'
-      });
-    }
+  const userId = req.params.id;
+  if (!userId) return res.status(400).json({ success: false, message: 'User ID required' });
 
-    // Fetch summaries/{userId}
+  try {
     const snapshot = await db.ref(`summaries/${userId}`).once('value');
     const data = snapshot.val();
-
-    if (!data) {
-      return res.json({
-        success: true,
-        message: 'No minutes of meeting found for this user.',
-        minutes: []
-      });
-    }
-
-    // Map to array, keep 3 template links
-    const minutes = Object.entries(data).map(([summaryId, details]) => ({
-      summaryId,
-      audioFileName: details.audioFileName || 'Untitled',
-      createdAt: details.createdAt || null,
-      formal_template: details.formal_template || null,
-      simple_template: details.simple_template || null,
-      detailed_template: details.detailed_template || null,
-    }));
-
-    res.json({
-      success: true,
-      message: 'Minutes fetched successfully.',
-      minutes
-    });
-
-  } catch (error) {
-    console.error('❌ Error in /allminutes/:id:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch minutes.',
-      error: error.message
-    });
+    const minutes = data ? Object.entries(data).map(([id, val]) => ({ summaryId: id, ...val })) : [];
+    res.json({ success: true, minutes });
+  } catch (e) {
+    console.error('Fetch Error:', e);
+    res.status(500).json({ success: false, message: e.message });
   }
 });
 
-
-
-// ——— Start Server ———
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
-
-
-
-
-
-
-
-
+// Start server
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

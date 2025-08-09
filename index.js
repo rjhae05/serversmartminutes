@@ -162,6 +162,11 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     console.log('✅ Transcription completed and saved locally.');
 
     res.json({ success: true, transcription: cleaned, audioFileName: original });
+
+    console.log('📦 Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
+
+    res.json(jsonResponse);
+    
   } catch (e) {
     console.error('❌ Transcription Error:', e);
     res.status(500).json({ success: false, message: e.message });
@@ -258,5 +263,6 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 

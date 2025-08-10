@@ -18,24 +18,27 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-// Keys and Config
+// --- Configurations and Keys ---
 const openaiKey = process.env.OPENAI_API_KEY;
 const projectId = 'speech-to-text-459913';
 const bucketName = 'smart-minutes-bucket';
+
+// Set GCP credentials environment variable
 process.env.GOOGLE_APPLICATION_CREDENTIALS = '/etc/secrets/smart-minutes-key.json';
 
 const storage = new Storage({ projectId });
 const speechClient = new speech.SpeechClient();
 const openai = new OpenAI({ apiKey: openaiKey });
 
-// Multer
+// Multer config for in-memory file upload
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Google Drive setup
 const auth = new google.auth.GoogleAuth({
   keyFile: '/etc/secrets/smartminutesMoMkey.json',
-  scopes: ['https://www.googleapis.com/auth/drive']
+  scopes: ['https://www.googleapis.com/auth/drive'],
 });
+
 let driveClient;
 const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
 
@@ -44,8 +47,8 @@ const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
     const authClient = await auth.getClient();
     driveClient = google.drive({ version: 'v3', auth: authClient });
     await testDriveAccess();
-  } catch (e) {
-    console.error('Drive Auth Init Error:', e);
+  } catch (error) {
+    console.error('Drive Auth Init Error:', error);
   }
 })();
 
@@ -55,20 +58,22 @@ async function testDriveAccess() {
       q: `'${parentFolderId}' in parents`,
       fields: 'files(id, name)',
     });
-    console.log(res.data.files?.length 
-      ? `Drive folder accessible. Files: ${res.data.files.map(f => f.name).join(', ')}`
-      : 'Drive folder accessible but empty.'
-    );
-  } catch (e) {
-    console.error('Drive access test failed:', e.message);
+    if (res.data.files?.length) {
+      console.log(`Drive folder accessible. Files: ${res.data.files.map(f => f.name).join(', ')}`);
+    } else {
+      console.log('Drive folder accessible but empty.');
+    }
+  } catch (error) {
+    console.error('Drive access test failed:', error.message);
   }
 }
 
-// Auto corrections
+// --- Auto-correction mappings ---
 const corrections = {
   'Thank you, sir. Have a good day in the': 'Thank you sa pag attend',
   young: 'yoong',
 };
+
 function applyCorrections(text) {
   for (const [wrong, correct] of Object.entries(corrections)) {
     text = text.replace(new RegExp(`\\b${wrong}\\b`, 'gi'), correct);
@@ -76,7 +81,7 @@ function applyCorrections(text) {
   return text;
 }
 
-// Upload and Transcription
+// --- Upload file buffer to Google Cloud Storage ---
 async function uploadToGCS(buffer, filename) {
   await storage.bucket(bucketName).file(filename).save(buffer, {
     metadata: { contentType: 'audio/mpeg' },
@@ -86,6 +91,7 @@ async function uploadToGCS(buffer, filename) {
   return `gs://${bucketName}/${filename}`;
 }
 
+// --- Transcribe audio from GCS URI using Google Speech API ---
 async function transcribe(gcsUri) {
   const request = {
     audio: { uri: gcsUri },
@@ -99,98 +105,117 @@ async function transcribe(gcsUri) {
       model: 'default',
     },
   };
-  const [op] = await speechClient.longRunningRecognize(request);
-  const [response] = await op.promise();
+  const [operation] = await speechClient.longRunningRecognize(request);
+  const [response] = await operation.promise();
+
+  // Extract last result's words for speaker diarization
   const wordsInfo = response.results.slice(-1)[0].alternatives[0].words;
+
   let transcript = '';
-  let current = null;
-  for (const w of wordsInfo) {
-    if (w.speakerTag !== current) {
-      current = w.speakerTag;
-      transcript += `\n\nSpeaker ${current}:\n`;
+  let currentSpeaker = null;
+
+  for (const wordInfo of wordsInfo) {
+    if (wordInfo.speakerTag !== currentSpeaker) {
+      currentSpeaker = wordInfo.speakerTag;
+      transcript += `\n\nSpeaker ${currentSpeaker}:\n`;
     }
-    transcript += w.word + ' ';
+    transcript += wordInfo.word + ' ';
   }
+
   return transcript.trim();
 }
 
-// Routes
+// --- Routes ---
 
-// Login
+// Login endpoint
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ success: false, message: 'Email/password required' });
+  if (!email || !password) {
+    return res.status(400).json({ success: false, message: 'Email/password required' });
+  }
 
   try {
     const snapshot = await db.ref('Users').once('value');
-    const userId = Object.entries(snapshot.val() || {}).find(([_, u]) => u.email === email && u.password === password)?.[0];
-    return userId
-      ? res.json({ success: true, message: 'Login successful', uid: userId })
-      : res.status(401).json({ success: false, message: 'Invalid credentials' });
-  } catch (e) {
-    console.error('Login Error:', e);
+    const users = snapshot.val() || {};
+    const userEntry = Object.entries(users).find(([_, u]) => u.email === email && u.password === password);
+
+    if (userEntry) {
+      const userId = userEntry[0];
+      return res.json({ success: true, message: 'Login successful', uid: userId });
+    } else {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+  } catch (error) {
+    console.error('Login Error:', error);
     res.status(500).json({ success: false, message: 'Error during login' });
   }
 });
-// Transcribe
+
+// Transcription endpoint
 app.post('/transcribe', upload.single('file'), async (req, res) => {
   console.log('📝 Transcription request received');
   const { uid } = req.body;
-  if (!req.file || !uid) return res.status(400).json({ success: false, message: 'File and UID required' });
+
+  if (!req.file || !uid) {
+    return res.status(400).json({ success: false, message: 'File and UID required' });
+  }
 
   try {
-    const original = req.file.originalname;
-    const gcsFilename = `${Date.now()}-${original}`;
+    const originalName = req.file.originalname;
+    const gcsFilename = `${Date.now()}-${originalName}`;
     const gcsUri = await uploadToGCS(req.file.buffer, gcsFilename);
 
-    console.log(`📤 Uploaded file: ${original}`);
+    console.log(`📤 Uploaded file: ${originalName}`);
     console.log(`🎙️ Transcribing from: ${gcsUri}`);
 
     const rawTranscript = await transcribe(gcsUri);
-    const cleaned = applyCorrections(rawTranscript);
+    const cleanedTranscript = applyCorrections(rawTranscript);
 
-    // ✅ Print transcription output to console
-    console.log('\n📄 Transcription Output:\n');
-    console.log(cleaned);
+    console.log('\n📄 Transcription Output:\n', cleanedTranscript);
     console.log('\n📄 End of Transcription\n');
 
+    // Save transcription in Firebase
     const timestamp = Date.now();
     const newRef = db.ref(`transcriptions/${uid}`).push();
-    await newRef.set({ filename: original, text: cleaned, gcsUri, status: 'Completed', createdAt: timestamp });
+    await newRef.set({
+      filename: originalName,
+      text: cleanedTranscript,
+      gcsUri,
+      status: 'Completed',
+      createdAt: timestamp,
+    });
 
-    fs.writeFileSync('./transcript.txt', cleaned);
+    // Save locally as fallback
+    fs.writeFileSync('./transcript.txt', cleanedTranscript);
     console.log('✅ Transcription completed and saved locally.');
 
-    // Declare and assign JSON response object here
     const jsonResponse = {
       success: true,
-      transcription: cleaned,
-      audioFileName: original
+      transcription: cleanedTranscript,
+      audioFileName: originalName,
     };
 
     console.log('📦 Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
-    // Send response once
     res.json(jsonResponse);
-    
-  } catch (e) {
-    console.error('❌ Transcription Error:', e);
-    res.status(500).json({ success: false, message: e.message });
+
+  } catch (error) {
+    console.error('❌ Transcription Error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// ✅ Add this route to your server.js (or index.js)
+// Get transcript text
 app.get('/transcript', (req, res) => {
   try {
     const transcript = fs.readFileSync('./transcript.txt', 'utf-8');
     res.json({ success: true, transcription: transcript });
-  } catch (err) {
-    console.error('Error reading transcript.txt:', err);
+  } catch (error) {
+    console.error('Error reading transcript.txt:', error);
     res.status(500).json({ success: false, message: 'Could not read transcript file.' });
   }
 });
 
-
-// ——— Summarize Endpoint ———
+// Summarize endpoint
 app.post('/summarize', upload.none(), async (req, res) => {
   try {
     const userId = req.body?.userId;
@@ -199,12 +224,11 @@ app.post('/summarize', upload.none(), async (req, res) => {
 
     let transcript = req.body?.transcript;
 
-    // Fallback: try reading from ./transcript.txt if transcript field is missing
     if (!transcript) {
       try {
         transcript = fs.readFileSync('./transcript.txt', 'utf-8');
         console.log('ℹ️ Loaded transcript from local file.');
-      } catch (e) {
+      } catch {
         return res.status(400).json({
           success: false,
           message: 'Transcript is missing and no fallback file was found.',
@@ -215,11 +239,11 @@ app.post('/summarize', upload.none(), async (req, res) => {
     if (!userId) {
       return res.status(400).json({
         success: false,
-        message: 'Missing userId in request body.'
+        message: 'Missing userId in request body.',
       });
     }
 
-    // Templates for summarization
+    // Summarization templates
     const templates = [
       {
         name: 'Template-Formal',
@@ -250,7 +274,7 @@ app.post('/summarize', upload.none(), async (req, res) => {
 [Closing remarks]
 
 Here is the transcription:
-"${transcript}"`
+"${transcript}"`,
       },
       {
         name: 'Template-Simple',
@@ -270,7 +294,7 @@ Action Items:
 - ...
 
 Closing Notes:
-"${transcript}"`
+"${transcript}"`,
       },
       {
         name: 'Template-Detailed',
@@ -293,8 +317,8 @@ For each item:
 
 Other Announcements:
 Closing:
-"${transcript}"`
-      }
+"${transcript}"`,
+      },
     ];
 
     const results = [];
@@ -312,18 +336,25 @@ Closing:
 
       const summaryText = aiResponse.choices[0].message.content;
 
+      // Generate docx document
       const doc = new Document({
         creator: 'Smart Minutes App',
         title: `Minutes of the Meeting - ${template.name}`,
         description: 'Auto-generated summary of transcribed audio.',
         sections: [
-          { children: summaryText.split('\n').map(line => new Paragraph(line)) },
+          {
+            children: summaryText
+              .split('\n')
+              .filter(line => line.trim() !== '')
+              .map(line => new Paragraph(line)),
+          },
         ],
       });
 
       const fileName = `${mp3BaseName}-${template.name}-${Date.now()}.docx`;
       const buffer = await Packer.toBuffer(doc);
 
+      // Upload docx to Google Drive
       const { Readable } = require('stream');
       const bufferStream = new Readable();
       bufferStream.push(buffer);
@@ -337,7 +368,7 @@ Closing:
 
       const media = { mimeType: fileMetadata.mimeType, body: bufferStream };
 
-      const driveRes = await drive.files.create({
+      const driveRes = await driveClient.files.create({
         requestBody: fileMetadata,
         media,
         fields: 'id',
@@ -345,7 +376,8 @@ Closing:
 
       const fileId = driveRes.data.id;
 
-      await drive.permissions.create({
+      // Make file public
+      await driveClient.permissions.create({
         fileId,
         requestBody: { role: 'reader', type: 'anyone' },
       });
@@ -353,21 +385,17 @@ Closing:
       const publicLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
 
       summariesTable[template.dbField] = publicLink;
-
-      results.push({
-        template: template.name,
-        link: publicLink,
-      });
+      results.push({ template: template.name, link: publicLink });
 
       console.log(`✅ Created and uploaded: ${template.name}`);
     }
 
-    // Save summary links under the user in Firebase
+    // Save summary links to Firebase
     const tableRef = db.ref(`summaries/${userId}`).push();
     await tableRef.set({
       audioFileName,
       createdAt: admin.database.ServerValue.TIMESTAMP,
-      ...summariesTable
+      ...summariesTable,
     });
 
     res.json({
@@ -387,29 +415,23 @@ Closing:
   }
 });
 
-
-// Fetch summaries
+// Fetch all summaries for a user
 app.get('/allminutes/:id', async (req, res) => {
   const userId = req.params.id;
-  if (!userId) return res.status(400).json({ success: false, message: 'User ID required' });
+  if (!userId) {
+    return res.status(400).json({ success: false, message: 'User ID required' });
+  }
 
   try {
     const snapshot = await db.ref(`summaries/${userId}`).once('value');
     const data = snapshot.val();
     const minutes = data ? Object.entries(data).map(([id, val]) => ({ summaryId: id, ...val })) : [];
     res.json({ success: true, minutes });
-  } catch (e) {
-    console.error('Fetch Error:', e);
-    res.status(500).json({ success: false, message: e.message });
+  } catch (error) {
+    console.error('Fetch Error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Start server
+// Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
-
-
-
-
-

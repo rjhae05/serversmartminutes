@@ -189,7 +189,6 @@ app.get('/transcript', (req, res) => {
   }
 });
 
-const upload = multer(); // Use memory storage defined earlier
 
 // ——— Summarize Endpoint ———
 app.post('/summarize', upload.none(), async (req, res) => {
@@ -407,6 +406,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

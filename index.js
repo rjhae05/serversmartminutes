@@ -189,15 +189,30 @@ app.get('/transcript', (req, res) => {
   }
 });
 
+const upload = multer(); // Use memory storage defined earlier
 
 // ——— Summarize Endpoint ———
-app.post('/summarize', async (req, res) => {
+app.post('/summarize', upload.none(), async (req, res) => {
   try {
-    const transcript = fs.readFileSync('./transcript.txt', 'utf-8');
-    const audioFileName = req.body?.audioFileName || 'Transcription';
-    const mp3BaseName = audioFileName.replace(/\.[^/.]+$/, "");
-
     const userId = req.body?.userId;
+    const audioFileName = req.body?.audioFileName || 'Transcription';
+    const mp3BaseName = audioFileName.replace(/\.[^/.]+$/, '');
+
+    let transcript = req.body?.transcript;
+
+    // Fallback: try reading from ./transcript.txt if transcript field is missing
+    if (!transcript) {
+      try {
+        transcript = fs.readFileSync('./transcript.txt', 'utf-8');
+        console.log('ℹ️ Loaded transcript from local file.');
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          message: 'Transcript is missing and no fallback file was found.',
+        });
+      }
+    }
+
     if (!userId) {
       return res.status(400).json({
         success: false,
@@ -205,7 +220,7 @@ app.post('/summarize', async (req, res) => {
       });
     }
 
-    // Original, more complete prompts
+    // Templates for summarization
     const templates = [
       {
         name: 'Template-Formal',
@@ -284,7 +299,7 @@ Closing:
     ];
 
     const results = [];
-    const summariesTable = {}; // Google Drive share links
+    const summariesTable = {};
 
     for (const template of templates) {
       const aiResponse = await openai.chat.completions.create({
@@ -340,17 +355,15 @@ Closing:
 
       summariesTable[template.dbField] = publicLink;
 
-
       results.push({
         template: template.name,
         link: publicLink,
-        
       });
 
       console.log(`✅ Created and uploaded: ${template.name}`);
     }
 
-    // ✅ Save under userId → summaryId
+    // Save summary links under the user in Firebase
     const tableRef = db.ref(`summaries/${userId}`).push();
     await tableRef.set({
       audioFileName,
@@ -375,6 +388,7 @@ Closing:
   }
 });
 
+
 // Fetch summaries
 app.get('/allminutes/:id', async (req, res) => {
   const userId = req.params.id;
@@ -393,6 +407,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

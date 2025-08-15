@@ -153,7 +153,7 @@ app.post('/login', async (req, res) => {
 
 // Transcription endpoint
 app.post('/transcribe', upload.single('file'), async (req, res) => {
-  console.log('📝 Transcription request received');
+  console.log(' Transcription request received');
   const { uid } = req.body;
 
   if (!req.file || !uid) {
@@ -165,14 +165,14 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     const gcsFilename = `${Date.now()}-${originalName}`;
     const gcsUri = await uploadToGCS(req.file.buffer, gcsFilename);
 
-    console.log(`📤 Uploaded file: ${originalName}`);
-    console.log(`🎙️ Transcribing from: ${gcsUri}`);
+    console.log(` Uploaded file: ${originalName}`);
+    console.log(` Transcribing from: ${gcsUri}`);
 
     const rawTranscript = await transcribe(gcsUri);
     const cleanedTranscript = applyCorrections(rawTranscript);
 
-    console.log('\n📄 Transcription Output:\n', cleanedTranscript);
-    console.log('\n📄 End of Transcription\n');
+    console.log('\n Transcription Output:\n', cleanedTranscript);
+    console.log('\n End of Transcription\n');
 
     // Save transcription in Firebase
     const timestamp = Date.now();
@@ -187,7 +187,7 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
 
     // Save locally as fallback
     fs.writeFileSync('./transcript.txt', cleanedTranscript);
-    console.log('✅ Transcription completed and saved locally.');
+    console.log(' Transcription completed and saved locally.');
 
     const jsonResponse = {
       success: true,
@@ -195,11 +195,11 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
       audioFileName: originalName,
     };
 
-    console.log('📦 Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
+    console.log('Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
     res.json(jsonResponse);
 
   } catch (error) {
-    console.error('❌ Transcription Error:', error);
+    console.error(' Transcription Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -227,7 +227,7 @@ app.post('/summarize', upload.none(), async (req, res) => {
     if (!transcript) {
       try {
         transcript = fs.readFileSync('./transcript.txt', 'utf-8');
-        console.log('ℹ️ Loaded transcript from local file.');
+        console.log(' Loaded transcript from local file.');
       } catch {
         return res.status(400).json({
           success: false,
@@ -387,7 +387,7 @@ Closing:
       summariesTable[template.dbField] = publicLink;
       results.push({ template: template.name, link: publicLink });
 
-      console.log(`✅ Created and uploaded: ${template.name}`);
+      console.log(` Created and uploaded: ${template.name}`);
     }
 
     // Save summary links to Firebase
@@ -406,7 +406,7 @@ Closing:
     });
 
   } catch (error) {
-    console.error('❌ Error in /summarize:', error);
+    console.error(' Error in /summarize:', error);
     res.status(500).json({
       success: false,
       message: 'Error during summarization or file handling.',
@@ -435,3 +435,4 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+

@@ -8,8 +8,10 @@ const { OpenAI } = require('openai');
 const { Document, Packer, Paragraph } = require('docx');
 const { google } = require('googleapis');
 
-const ffmpegPath = require('ffmpeg-static');
-const ffmpeg = require('fluent-ffmpeg');
+const path = require("path");
+const ffmpegPath = require("ffmpeg-static");
+const ffmpeg = require("fluent-ffmpeg");
+const { Readable, Writable } = require("stream");
 ffmpeg.setFfmpegPath(ffmpegPath); 
 
 require('dotenv').config();
@@ -42,8 +44,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 const { Writable } = require('stream');
 
 
+// --- Helpers ---
 function bufferToStream(buffer) {
-  const { Readable } = require('stream');
   const stream = new Readable();
   stream.push(buffer);
   stream.push(null);
@@ -59,18 +61,18 @@ function convertM4ABufferToMP3Buffer(inputBuffer) {
       write(chunk, encoding, callback) {
         chunks.push(chunk);
         callback();
-      }
+      },
     });
 
     ffmpeg(inputStream)
-      .inputFormat('m4a')
-      .audioCodec('libmp3lame')
-      .audioChannels(1)          // ✅ force mono
-      .audioBitrate('128k')      // ✅ clean output
-      .audioFrequency(16000)     // ✅ match Google Speech
-      .format('mp3')
-      .on('error', (err) => reject(err))
-      .on('end', () => resolve(Buffer.concat(chunks)))
+      .inputFormat("m4a")
+      .audioCodec("libmp3lame")
+      .audioChannels(1) // mono
+      .audioBitrate("128k")
+      .audioFrequency(16000) // match Google STT
+      .format("mp3")
+      .on("error", reject)
+      .on("end", () => resolve(Buffer.concat(chunks)))
       .pipe(writableStream, { end: true });
   });
 }
@@ -501,6 +503,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

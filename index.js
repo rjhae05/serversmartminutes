@@ -38,7 +38,7 @@ const openai = new OpenAI({ apiKey: openaiKey });
 const upload = multer({ storage: multer.memoryStorage() });
 
 const { Readable } = require('stream');
-const ffmpeg = require('fluent-ffmpeg');
+
 
 function bufferToStream(buffer) {
   const stream = new Readable();
@@ -477,6 +477,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

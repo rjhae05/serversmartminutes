@@ -53,9 +53,10 @@ function convertM4ABufferToMP3Buffer(inputBuffer) {
     const chunks = [];
     const inputStream = bufferToStream(inputBuffer);
 
-    const ffmpegCommand = ffmpeg(inputStream)
+    ffmpeg(inputStream)
       .inputFormat('m4a')
       .audioCodec('libmp3lame')
+      .audioFrequency(16000)   // 🔴 force 16kHz for Google Speech
       .format('mp3')
       .on('error', (err) => reject(err))
       .on('end', () => resolve(Buffer.concat(chunks)))
@@ -489,6 +490,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

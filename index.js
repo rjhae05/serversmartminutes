@@ -129,7 +129,7 @@ async function transcribe(gcsUri) {
     audio: { uri: gcsUri },
     config: {
       encoding: 'MP3',
-      sampleRateHertz: 16000,
+      sampleRateHertz: 44100,
       languageCode: 'fil-PH',
       alternativeLanguageCodes: ['en-US'],
       enableSpeakerDiarization: true,
@@ -490,6 +490,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

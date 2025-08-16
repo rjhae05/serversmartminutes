@@ -53,7 +53,6 @@ function bufferToStream(buffer) {
 function convertM4ABufferToMP3Buffer(inputBuffer) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-
     const inputStream = bufferToStream(inputBuffer);
 
     const writableStream = new Writable({
@@ -66,14 +65,15 @@ function convertM4ABufferToMP3Buffer(inputBuffer) {
     ffmpeg(inputStream)
       .inputFormat('m4a')
       .audioCodec('libmp3lame')
-      .audioFrequency(16000) // ✅ Google Speech prefers 16kHz
+      .audioChannels(1)          // ✅ force mono
+      .audioBitrate('128k')      // ✅ clean output
+      .audioFrequency(16000)     // ✅ match Google Speech
       .format('mp3')
       .on('error', (err) => reject(err))
       .on('end', () => resolve(Buffer.concat(chunks)))
       .pipe(writableStream, { end: true });
   });
 }
-
 
 // Google Drive setup
 const auth = new google.auth.GoogleAuth({
@@ -142,6 +142,7 @@ async function transcribe(gcsUri) {
       sampleRateHertz: 44100,
       languageCode: 'fil-PH',
       alternativeLanguageCodes: ['en-US'],
+       audioChannelCount: 1, // ✅ align with conversion
       enableSpeakerDiarization: true,
       diarizationSpeakerCount: 2,
       model: 'default',
@@ -500,6 +501,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

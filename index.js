@@ -7,7 +7,8 @@ const fs = require('fs');
 const { OpenAI } = require('openai');
 const { Document, Packer, Paragraph } = require('docx');
 const { google } = require('googleapis');
-
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
 
 require('dotenv').config();
 
@@ -475,5 +476,6 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 

@@ -9,6 +9,7 @@ const { Document, Packer, Paragraph } = require('docx');
 const { google } = require('googleapis');
 
 const ffmpegPath = require('ffmpeg-static');
+const ffmpeg = require('fluent-ffmpeg');
 
 require('dotenv').config();
 
@@ -476,6 +477,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

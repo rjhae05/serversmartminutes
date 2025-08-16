@@ -211,6 +211,7 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
       finalBuffer = await convertM4ABufferToMP3Buffer(req.file.buffer);
     
       finalFilename = originalName.replace(/\.[^/.]+$/, '') + '.mp3';
+       console.log('🎵 Converted filename:', finalFilename); 
     } else {
       console.log('✅ Uploading as-is (not M4A):', originalName);
     }
@@ -488,6 +489,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

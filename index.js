@@ -7,6 +7,8 @@ const fs = require('fs');
 const { OpenAI } = require('openai');
 const { Document, Packer, Paragraph } = require('docx');
 const { google } = require('googleapis');
+
+
 require('dotenv').config();
 
 const admin = require('./firebaseAdmin');
@@ -32,6 +34,32 @@ const openai = new OpenAI({ apiKey: openaiKey });
 
 // Multer config for in-memory file upload
 const upload = multer({ storage: multer.memoryStorage() });
+
+const { Readable } = require('stream');
+const ffmpeg = require('fluent-ffmpeg');
+
+function bufferToStream(buffer) {
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null);
+  return stream;
+}
+
+function convertM4ABufferToMP3Buffer(inputBuffer) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const inputStream = bufferToStream(inputBuffer);
+
+    const ffmpegCommand = ffmpeg(inputStream)
+      .inputFormat('m4a')
+      .audioCodec('libmp3lame')
+      .format('mp3')
+      .on('error', (err) => reject(err))
+      .on('end', () => resolve(Buffer.concat(chunks)))
+      .pipe()
+      .on('data', (chunk) => chunks.push(chunk));
+  });
+}
 
 // Google Drive setup
 const auth = new google.auth.GoogleAuth({
@@ -151,9 +179,9 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Transcription endpoint
+// --- Transcription endpoint ---
 app.post('/transcribe', upload.single('file'), async (req, res) => {
-  console.log(' Transcription request received');
+  console.log('Transcription request received');
   const { uid } = req.body;
 
   if (!req.file || !uid) {
@@ -162,23 +190,35 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
 
   try {
     const originalName = req.file.originalname;
-    const gcsFilename = `${Date.now()}-${originalName}`;
-    const gcsUri = await uploadToGCS(req.file.buffer, gcsFilename);
+    let finalBuffer = req.file.buffer;
+    let finalFilename = originalName;
 
-    console.log(` Uploaded file: ${originalName}`);
-    console.log(` Transcribing from: ${gcsUri}`);
+    // ✅ Check if uploaded file is M4A, then convert to MP3
+    if (originalName.toLowerCase().endsWith('.m4a')) {
+      console.log('🔄 Converting M4A to MP3 before upload...');
+      finalBuffer = await convertM4ABufferToMP3Buffer(req.file.buffer);
+
+      // replace extension with .mp3
+      finalFilename = originalName.replace(/\.[^/.]+$/, '') + '.mp3';
+    }
+
+    const gcsFilename = `${Date.now()}-${finalFilename}`;
+    const gcsUri = await uploadToGCS(finalBuffer, gcsFilename);
+
+    console.log(`Uploaded file: ${finalFilename}`);
+    console.log(`Transcribing from: ${gcsUri}`);
 
     const rawTranscript = await transcribe(gcsUri);
     const cleanedTranscript = applyCorrections(rawTranscript);
 
-    console.log('\n Transcription Output:\n', cleanedTranscript);
-    console.log('\n End of Transcription\n');
+    console.log('\nTranscription Output:\n', cleanedTranscript);
+    console.log('\nEnd of Transcription\n');
 
     // Save transcription in Firebase
     const timestamp = Date.now();
     const newRef = db.ref(`transcriptions/${uid}`).push();
     await newRef.set({
-      filename: originalName,
+      filename: finalFilename,
       text: cleanedTranscript,
       gcsUri,
       status: 'Completed',
@@ -192,14 +232,14 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     const jsonResponse = {
       success: true,
       transcription: cleanedTranscript,
-      audioFileName: originalName,
+      audioFileName: finalFilename,
     };
 
     console.log('Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
     res.json(jsonResponse);
 
   } catch (error) {
-    console.error(' Transcription Error:', error);
+    console.error('Transcription Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -435,4 +475,5 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 

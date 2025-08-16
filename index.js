@@ -195,79 +195,54 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error during login' });
   }
 });
-
-// --- Transcription endpoint ---
-app.post('/transcribe', upload.single('file'), async (req, res) => {
-  console.log('Transcription request received');
+// Transcribe
+app.post("/transcribe", upload.single("file"), async (req, res) => {
+  console.log("🎤 Transcription request received");
   const { uid } = req.body;
 
-  if (!req.file || !uid) {
-    return res.status(400).json({ success: false, message: 'File and UID required' });
-  }
+  if (!req.file || !uid)
+    return res.status(400).json({ success: false, message: "File + UID required" });
 
   try {
-       const originalName = req.file.originalname;
-    console.log('📂 Original filename:', originalName);
-
+    const originalName = req.file.originalname;
     let finalBuffer = req.file.buffer;
-    console.log('📦 Initial buffer size:', finalBuffer?.length || 0, 'bytes');
-
     let finalFilename = originalName;
-    console.log('📝 Initial finalFilename:', finalFilename);
 
-    let isM4A =
-      originalName.toLowerCase().endsWith('.m4a') ||
-      req.file.mimetype === 'audio/m4a' ||
-      req.file.mimetype === 'audio/mp4';
-    
-    if (isM4A) {
-      console.log('🔄 Converting M4A to MP3 before upload...');
+    if (
+      originalName.toLowerCase().endsWith(".m4a") ||
+      req.file.mimetype === "audio/m4a" ||
+      req.file.mimetype === "audio/mp4"
+    ) {
+      console.log("🔄 Converting M4A to MP3...");
       finalBuffer = await convertM4ABufferToMP3Buffer(req.file.buffer);
-    
-      finalFilename = originalName.replace(/\.[^/.]+$/, '') + '.mp3';
-       console.log('🎵 Converted filename:', finalFilename); 
-    } else {
-      console.log('✅ Uploading as-is (not M4A):', originalName);
+      finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
     }
 
     const gcsFilename = `${Date.now()}-${finalFilename}`;
     const gcsUri = await uploadToGCS(finalBuffer, gcsFilename);
 
-    console.log(`Uploaded file: ${finalFilename}`);
-    console.log(`Transcribing from: ${gcsUri}`);
-
+    console.log("📝 Transcribing from:", gcsUri);
     const rawTranscript = await transcribe(gcsUri);
     const cleanedTranscript = applyCorrections(rawTranscript);
 
-    console.log('\nTranscription Output:\n', cleanedTranscript);
-    console.log('\nEnd of Transcription\n');
-
-    // Save transcription in Firebase
-    const timestamp = Date.now();
     const newRef = db.ref(`transcriptions/${uid}`).push();
     await newRef.set({
       filename: finalFilename,
       text: cleanedTranscript,
       gcsUri,
-      status: 'Completed',
-      createdAt: timestamp,
+      status: "Completed",
+      createdAt: Date.now(),
     });
 
-    // Save locally as fallback
-    fs.writeFileSync('./transcript.txt', cleanedTranscript);
-    console.log(' Transcription completed and saved locally.');
+    fs.writeFileSync("./transcript.txt", cleanedTranscript);
 
-    const jsonResponse = {
+    res.json({
       success: true,
       transcription: cleanedTranscript,
       audioFileName: finalFilename,
-    };
-
-    console.log('Sending JSON Response:', JSON.stringify(jsonResponse, null, 2));
-    res.json(jsonResponse);
-
+    });
   } catch (error) {
-    console.error('Transcription Error:', error);
+    console.error("Transcription Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -503,6 +478,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

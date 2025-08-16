@@ -38,10 +38,12 @@ const openai = new OpenAI({ apiKey: openaiKey });
 // Multer config for in-memory file upload
 const upload = multer({ storage: multer.memoryStorage() });
 
-const { Readable } = require('stream');
+
+const { Writable } = require('stream');
 
 
 function bufferToStream(buffer) {
+  const { Readable } = require('stream');
   const stream = new Readable();
   stream.push(buffer);
   stream.push(null);
@@ -51,19 +53,27 @@ function bufferToStream(buffer) {
 function convertM4ABufferToMP3Buffer(inputBuffer) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+
     const inputStream = bufferToStream(inputBuffer);
+
+    const writableStream = new Writable({
+      write(chunk, encoding, callback) {
+        chunks.push(chunk);
+        callback();
+      }
+    });
 
     ffmpeg(inputStream)
       .inputFormat('m4a')
       .audioCodec('libmp3lame')
-      .audioFrequency(16000)   // 🔴 force 16kHz for Google Speech
+      .audioFrequency(16000) // ✅ Google Speech prefers 16kHz
       .format('mp3')
       .on('error', (err) => reject(err))
       .on('end', () => resolve(Buffer.concat(chunks)))
-      .pipe()
-      .on('data', (chunk) => chunks.push(chunk));
+      .pipe(writableStream, { end: true });
   });
 }
+
 
 // Google Drive setup
 const auth = new google.auth.GoogleAuth({
@@ -202,7 +212,20 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     let finalFilename = originalName;
     console.log('📝 Initial finalFilename:', finalFilename);
 
-
+    let isM4A =
+      originalName.toLowerCase().endsWith('.m4a') ||
+      req.file.mimetype === 'audio/m4a' ||
+      req.file.mimetype === 'audio/mp4';
+    
+    if (isM4A) {
+      console.log('🔄 Converting M4A to MP3 before upload...');
+      finalBuffer = await convertM4ABufferToMP3Buffer(req.file.buffer);
+    
+      finalFilename = originalName.replace(/\.[^/.]+$/, '') + '.mp3';
+       console.log('🎵 Converted filename:', finalFilename); 
+    } else {
+      console.log('✅ Uploading as-is (not M4A):', originalName);
+    }
 
     const gcsFilename = `${Date.now()}-${finalFilename}`;
     const gcsUri = await uploadToGCS(finalBuffer, gcsFilename);
@@ -477,6 +500,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

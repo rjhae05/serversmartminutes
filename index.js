@@ -202,20 +202,7 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
     let finalFilename = originalName;
     console.log('📝 Initial finalFilename:', finalFilename);
 
-    let isM4A =
-      originalName.toLowerCase().endsWith('.m4a') ||
-      req.file.mimetype === 'audio/m4a' ||
-      req.file.mimetype === 'audio/mp4';
-    
-    if (isM4A) {
-      console.log('🔄 Converting M4A to MP3 before upload...');
-      finalBuffer = await convertM4ABufferToMP3Buffer(req.file.buffer);
-    
-      finalFilename = originalName.replace(/\.[^/.]+$/, '') + '.mp3';
-       console.log('🎵 Converted filename:', finalFilename); 
-    } else {
-      console.log('✅ Uploading as-is (not M4A):', originalName);
-    }
+
 
     const gcsFilename = `${Date.now()}-${finalFilename}`;
     const gcsUri = await uploadToGCS(finalBuffer, gcsFilename);
@@ -490,6 +477,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

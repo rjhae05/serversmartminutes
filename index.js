@@ -13,8 +13,6 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os'); 
 
-const path = require("path");
-
 const { Readable, Writable } = require("stream");
 ffmpeg.setFfmpegPath(ffmpegPath); 
 
@@ -546,6 +544,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

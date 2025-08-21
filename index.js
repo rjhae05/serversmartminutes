@@ -1,16 +1,21 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
 const { Storage } = require('@google-cloud/storage');
 const speech = require('@google-cloud/speech').v1p1beta1;
 const fs = require('fs');
 const { OpenAI } = require('openai');
 const { Document, Packer, Paragraph } = require('docx');
 const { google } = require('googleapis');
+const path = require('path');
+const fs = require('fs');
+const os = require('os'); 
 
 const path = require("path");
-const ffmpegPath = require("ffmpeg-static");
-const ffmpeg = require("fluent-ffmpeg");
+
 const { Readable, Writable } = require("stream");
 ffmpeg.setFfmpegPath(ffmpegPath); 
 
@@ -40,7 +45,21 @@ const openai = new OpenAI({ apiKey: openaiKey });
 // Multer config for in-memory file upload
 const upload = multer({ storage: multer.memoryStorage() });
 
+app.use(express.static(__dirname));
 
+// ——— Logger ———
+let logStorage = [];
+function logHandler(message, type = "info") {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    type,
+    message,
+  };
+  logStorage.push(entry);
+
+  if (logStorage.length > 100) logStorage.shift();
+  console.log(`[${entry.type.toUpperCase()}] ${entry.timestamp}: ${entry.message}`);
+}
 
 // --- Helpers ---
 function bufferToStream(buffer) {
@@ -476,6 +495,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

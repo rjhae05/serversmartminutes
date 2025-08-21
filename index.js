@@ -6,7 +6,6 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 const { Storage } = require('@google-cloud/storage');
 const speech = require('@google-cloud/speech').v1p1beta1;
-const fs = require('fs');
 const { OpenAI } = require('openai');
 const { Document, Packer, Paragraph } = require('docx');
 const { google } = require('googleapis');
@@ -547,6 +546,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

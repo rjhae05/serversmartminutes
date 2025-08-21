@@ -61,6 +61,13 @@ function logHandler(message, type = "info") {
   console.log(`[${entry.type.toUpperCase()}] ${entry.timestamp}: ${entry.message}`);
 }
 
+// ——— Ensure uploads folder exists ———
+const localUploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(localUploadDir)) {
+  fs.mkdirSync(localUploadDir);
+  logHandler("📂 Created local uploads folder", "system");
+}
+
 // --- Helpers ---
 function bufferToStream(buffer) {
   const stream = new Readable();
@@ -68,29 +75,35 @@ function bufferToStream(buffer) {
   stream.push(null);
   return stream;
 }
-
-function convertM4ABufferToMP3Buffer(inputBuffer) {
+/**
+ * Convert ANY input buffer → MP3 buffer (temp file approach)
+ */
+function convertBufferToMP3(buffer) {
   return new Promise((resolve, reject) => {
-    const chunks = [];
-    const inputStream = bufferToStream(inputBuffer);
+    const inputPath = path.join(os.tmpdir(), `input-${Date.now()}.m4a`);
+    const outputPath = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
 
-    const writableStream = new Writable({
-      write(chunk, encoding, callback) {
-        chunks.push(chunk);
-        callback();
-      },
-    });
+    fs.writeFileSync(inputPath, buffer);
 
-    ffmpeg(inputStream)
-      .inputFormat("m4a")
-      .audioCodec("libmp3lame")
-      .audioChannels(1) // mono
-      .audioBitrate("128k")
-      .audioFrequency(16000) // match Google STT
-      .format("mp3")
-      .on("error", reject)
-      .on("end", () => resolve(Buffer.concat(chunks)))
-      .pipe(writableStream, { end: true });
+    ffmpeg(inputPath)
+      .setFfmpegPath(ffmpegPath)
+      .toFormat('mp3')
+      .on('error', (err) => {
+        logHandler(`FFmpeg error: ${err.message}`, "error");
+        reject(err);
+      })
+      .on('end', () => {
+        try {
+          const mp3Buffer = fs.readFileSync(outputPath);
+          fs.unlinkSync(inputPath);
+          fs.unlinkSync(outputPath);
+          logHandler(`✅ Conversion finished, buffer size: ${mp3Buffer.length} bytes`, "success");
+          resolve(mp3Buffer);
+        } catch (err) {
+          reject(err);
+        }
+      })
+      .save(outputPath);
   });
 }
 
@@ -143,13 +156,24 @@ function applyCorrections(text) {
 }
 
 // --- Upload file buffer to Google Cloud Storage ---
-async function uploadToGCS(buffer, filename) {
-  await storage.bucket(bucketName).file(filename).save(buffer, {
-    metadata: { contentType: 'audio/mpeg' },
+/**
+ * Upload MP3 buffer → Google Cloud Storage
+ */
+async function uploadBufferToGCS(buffer, fileName) {
+  const bucket = storage.bucket(bucketName);
+  const file = bucket.file(fileName);
+
+  await file.save(buffer, {
+    metadata: { contentType: "audio/mp3" },
     resumable: false,
   });
-  console.log('Uploaded to GCS at:', filename);
-  return `gs://${bucketName}/${filename}`;
+
+  logHandler(`📦 Uploaded to GCS: gs://${bucketName}/${fileName}`, "success");
+
+  return {
+    gcsPath: `gs://${bucketName}/${fileName}`,
+    publicUrl: `https://storage.googleapis.com/${bucketName}/${fileName}`,
+  };
 }
 
 // --- Transcribe audio from GCS URI using Google Speech API ---
@@ -495,6 +519,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

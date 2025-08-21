@@ -237,18 +237,25 @@ app.post('/login', async (req, res) => {
   }
 });
 // Transcribe
+// ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("🎤 Transcription request received");
   const { uid } = req.body;
 
-  if (!req.file || !uid)
-    return res.status(400).json({ success: false, message: "File + UID required" });
+  if (!req.file) {
+    logHandler("❌ No file uploaded", "error");
+    return res.status(400).json({ error: "No file uploaded." });
+  }
+  if (!uid) {
+    return res.status(400).json({ success: false, message: "UID required" });
+  }
 
   try {
     const originalName = req.file.originalname;
     let finalBuffer = req.file.buffer;
     let finalFilename = originalName;
 
+    // ——— Convert if M4A ———
     if (
       originalName.toLowerCase().endsWith(".m4a") ||
       req.file.mimetype === "audio/m4a" ||
@@ -259,18 +266,36 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
     }
 
-    const gcsFilename = `${Date.now()}-${finalFilename}`;
-    const gcsUri = await uploadToGCS(finalBuffer, gcsFilename);
+    // ——— Save locally first ———
+    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
+    const fileName = `${Date.now()}-${safeName}.mp3`;
+    const localPath = path.join(localUploadDir, fileName);
+    fs.writeFileSync(localPath, finalBuffer);
+    logHandler(`💾 Saved locally: ${localPath}`, "success");
 
-    console.log("📝 Transcribing from:", gcsUri);
-    const rawTranscript = await transcribe(gcsUri);
+    // ——— Upload to GCS ———
+    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
+
+    // ✅ Delete local copy after successful upload
+    try {
+      fs.unlinkSync(localPath);
+      logHandler(`🗑️ Deleted local copy: ${localPath}`, "system");
+    } catch (err) {
+      logHandler(`⚠️ Failed to delete local copy: ${err.message}`, "error");
+    }
+
+    // ——— Transcribe from GCS ———
+    console.log("📝 Transcribing from:", gcsPath);
+    const rawTranscript = await transcribe(gcsPath);
     const cleanedTranscript = applyCorrections(rawTranscript);
 
+    // ——— Save to Firebase DB ———
     const newRef = db.ref(`transcriptions/${uid}`).push();
     await newRef.set({
-      filename: finalFilename,
+      filename: fileName,
       text: cleanedTranscript,
-      gcsUri,
+      gcsUri: gcsPath,
+      publicUrl,
       status: "Completed",
       createdAt: Date.now(),
     });
@@ -280,13 +305,16 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     res.json({
       success: true,
       transcription: cleanedTranscript,
-      audioFileName: finalFilename,
+      audioFileName: fileName,
+      gcsPath,
+      publicUrl,
     });
   } catch (error) {
-    console.error("Transcription Error:", error);
+    console.error("❌ Transcription Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 
 // Get transcript text
 app.get('/transcript', (req, res) => {
@@ -519,6 +547,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

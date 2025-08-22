@@ -233,7 +233,6 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error during login' });
   }
 });
-
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("🎤 Transcription request received");
@@ -252,48 +251,56 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     let finalBuffer = req.file.buffer;
     let finalFilename = originalName;
 
-
     // Debug logs
     console.log("📂 Uploaded file info:");
     console.log("   - originalName:", originalName);
     console.log("   - mimetype:", req.file.mimetype);
     console.log("   - size (bytes):", req.file.size);
-    
+
     // ——— Convert if M4A ———
-   if (originalName.toLowerCase().endsWith(".m4a")) {
+    if (originalName.toLowerCase().endsWith(".m4a")) {
       console.log("🔄 Converting M4A to MP3...");
       finalBuffer = await convertBufferToMP3(req.file.buffer);
       finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
 
+      // Save to local (ephemeral, ok for Render)
+      const tempPath = path.join(localUploadDir, finalFilename);
+      fs.writeFileSync(tempPath, finalBuffer);
+      logHandler(`💾 Temporarily saved: ${tempPath}`, "success");
 
-       // Save to local (ephemeral, ok for Render)
-    fs.writeFileSync(localPath, finalBuffer);
-    logHandler(`💾 Temporarily saved: ${localPath}`, "success");
-
-         // ✅ Delete local copy right after upload
-    try {
-      fs.unlinkSync(localPath);
-      logHandler(`🗑️ Deleted local copy: ${localPath}`, "system");
-    } catch (err) {
-      logHandler(`⚠️ Failed to delete local copy: ${err.message}`, "error");
+      // ✅ Delete local copy right after upload
+      try {
+        fs.unlinkSync(tempPath);
+        logHandler(`🗑️ Deleted local copy: ${tempPath}`, "system");
+      } catch (err) {
+        logHandler(`⚠️ Failed to delete local copy: ${err.message}`, "error");
+      }
     }
 
-    }
-           // ——— Generate safe filename ———
+    // ——— Generate safe filename ———
     const safeName = finalFilename.replace(/\.[^/.]+$/, "");
     const fileName = `${Date.now()}-${safeName}.mp3`;
     const localPath = path.join(localUploadDir, fileName);
 
-
-  
     // ——— Upload to GCS ———
     const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
 
-
-
     // ——— Transcribe from GCS ———
     console.log("📝 Transcribing from:", gcsPath);
-    const rawTranscript = await transcribe(gcsPath);
+
+    // 🔄 Start 10 sec interval logs
+    const interval = setInterval(() => {
+      console.log("⏳ Transcription still processing...");
+    }, 10000);
+
+    let rawTranscript;
+    try {
+      rawTranscript = await transcribe(gcsPath);
+    } finally {
+      clearInterval(interval); // ✅ Always stop interval
+    }
+
+    console.log("✅ Transcription finished!");
     const cleanedTranscript = applyCorrections(rawTranscript);
 
     // ——— Save to Firebase DB ———
@@ -306,9 +313,6 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       status: "Completed",
       createdAt: Date.now(),
     });
-
-    // ❌ REMOVE: fs.writeFileSync("./transcript.txt", cleanedTranscript)
-    // Transcript file won't persist on Render, so just return + Firebase
 
     // ——— Send response ———
     res.json({
@@ -323,6 +327,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 
 
 // Get transcript text
@@ -556,6 +561,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

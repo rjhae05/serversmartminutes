@@ -265,10 +265,6 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       finalBuffer = await convertBufferToMP3(req.file.buffer);
       finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
 
-       // ——— Generate safe filename ———
-    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
-    const fileName = `${Date.now()}-${safeName}.mp3`;
-    const localPath = path.join(localUploadDir, fileName);
 
        // Save to local (ephemeral, ok for Render)
     fs.writeFileSync(localPath, finalBuffer);
@@ -283,6 +279,11 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     }
 
     }
+           // ——— Generate safe filename ———
+    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
+    const fileName = `${Date.now()}-${safeName}.mp3`;
+    const localPath = path.join(localUploadDir, fileName);
+
 
   
     // ——— Upload to GCS ———
@@ -555,6 +556,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

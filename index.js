@@ -264,27 +264,31 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       console.log("🔄 Converting M4A to MP3...");
       finalBuffer = await convertBufferToMP3(req.file.buffer);
       finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
-    }
 
-    // ——— Generate safe filename ———
+       // ——— Generate safe filename ———
     const safeName = finalFilename.replace(/\.[^/.]+$/, "");
     const fileName = `${Date.now()}-${safeName}.mp3`;
     const localPath = path.join(localUploadDir, fileName);
 
-    // Save to local (ephemeral, ok for Render)
+       // Save to local (ephemeral, ok for Render)
     fs.writeFileSync(localPath, finalBuffer);
     logHandler(`💾 Temporarily saved: ${localPath}`, "success");
 
-    // ——— Upload to GCS ———
-    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
-
-    // ✅ Delete local copy right after upload
+         // ✅ Delete local copy right after upload
     try {
       fs.unlinkSync(localPath);
       logHandler(`🗑️ Deleted local copy: ${localPath}`, "system");
     } catch (err) {
       logHandler(`⚠️ Failed to delete local copy: ${err.message}`, "error");
     }
+
+    }
+
+  
+    // ——— Upload to GCS ———
+    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
+
+
 
     // ——— Transcribe from GCS ———
     console.log("📝 Transcribing from:", gcsPath);
@@ -551,6 +555,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

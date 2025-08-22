@@ -253,14 +253,11 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     let finalFilename = originalName;
 
     // ——— Convert if M4A ———
-    if (
-        originalName.toLowerCase().endsWith(".m4a") ||
-        (req.file.mimetype && req.file.mimetype.includes("m4a"))
-      ) {
-        console.log("🔄 Converting M4A to MP3...");
-        finalBuffer = await convertBufferToMP3(req.file.buffer);
-        finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
-      }
+   if (originalName.toLowerCase().endsWith(".m4a")) {
+      console.log("🔄 Converting M4A to MP3...");
+      finalBuffer = await convertBufferToMP3(req.file.buffer);
+      finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
+    }
 
     // ——— Generate safe filename ———
     const safeName = finalFilename.replace(/\.[^/.]+$/, "");
@@ -547,6 +544,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

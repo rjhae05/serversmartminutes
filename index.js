@@ -252,6 +252,13 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     let finalBuffer = req.file.buffer;
     let finalFilename = originalName;
 
+
+    // Debug logs
+    console.log("📂 Uploaded file info:");
+    console.log("   - originalName:", originalName);
+    console.log("   - mimetype:", req.file.mimetype);
+    console.log("   - size (bytes):", req.file.size);
+    
     // ——— Convert if M4A ———
    if (originalName.toLowerCase().endsWith(".m4a")) {
       console.log("🔄 Converting M4A to MP3...");
@@ -544,6 +551,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

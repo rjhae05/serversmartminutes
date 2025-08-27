@@ -62,7 +62,7 @@ function logHandler(message, type = "info") {
 const localUploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(localUploadDir)) {
   fs.mkdirSync(localUploadDir);
-  logHandler("📂 Created local uploads folder", "system");
+  logHandler(" Created local uploads folder", "system");
 }
 
 // --- Helpers ---
@@ -94,7 +94,7 @@ function convertBufferToMP3(buffer) {
           const mp3Buffer = fs.readFileSync(outputPath);
           fs.unlinkSync(inputPath);
           fs.unlinkSync(outputPath);
-          logHandler(`✅ Conversion finished, buffer size: ${mp3Buffer.length} bytes`, "success");
+          logHandler(` Conversion finished, buffer size: ${mp3Buffer.length} bytes`, "success");
           resolve(mp3Buffer);
         } catch (err) {
           reject(err);
@@ -141,9 +141,76 @@ async function testDriveAccess() {
 
 // --- Auto-correction mappings ---
 const corrections = {
-  'Thank you, sir. Have a good day in the': 'Thank you sa pag attend',
-  young: 'yoong',
+  "made your": "medyo",
+  "and": "ang",
+  "yong": "iyong",
+  "business": "negosyo",
+  "ASAP": "as soon as possible",
+  "Wrap up": "Tapusin na",
+  "mo na": "muna",
+  "Questions or clarification regarding sa napagusapan natin": "May tanong o paglilinaw ba tungkol sa napag-usapan natin",
+  "Please pakisend na lang sa email or GC after.": "Pakisend na lang sa email o GC pagkatapos.",
+  "Sorry, medyo choppy ka kanina, can you repeat": "Sorry, medyo choppy ka kanina. Pwede mo bang ulitin?",
+  "Di na ko": "Di na ako",
+  "take a": "teka",
+  "wedding": "kasal",
+  "goes to": "para kay",
+  "Point a": "Punta",
+  "two log": "tulog",
+  "Zeus": "sus",
+  "yun yon": "iyon yun",
+  "union": "unyon",
+  "wanna": "gusto",
+  "we na": "uwi na",
+  "bucket": "bakit",
+  "front ka": "harap ka",
+  "punata ka": "punta ka",
+  "point account": "puntahan ka",
+  "shut up matulog": "sarap matulog",
+  "unknown": "hindi alam",
+  "a known": "anong",
+  "indeed ko": "hindi ko",
+  "nak eat a": "nakita",
+  "nakita move a": "nakita mo ba",
+  "none john": "nandyan",
+  "helica": "halika",
+  "tada": "tara",
+  "low tide yo": "laro tayo",
+  "tada kind tayo": "tara kain tayo",
+  "kung too big": "ng tubig",
+  "bali kana": "bahala ka na",
+  "can tie you": "kain tayo",
+  "keyta": "kita",
+  "font a hanky ta": "puntahan kita",
+  "bucket sakali": "baka sakali",
+  "uncut mo": "ang cute mo",
+  "annie needs a bra": "ang init sobra",
+  "none jhan siya": "nandyan siya",
+  "shocker": "tsaka",
+  "chucka": "tsaka",
+  "canon": "kanin",
+  "parry": "pare",
+  "terra": "tara",
+  "uh oh": "oo",
+  "ba allah ka": "bahala ka",
+  "whale lang": "wait lang",
+  "pick a muna": "teka muna",
+  "tik muna": "teka muna",
+  "dama ba": "tama ba",
+  "basis": "base",
+  "base is": "base",
+  "ano yon": "ano yun",
+  "an onion": "ano yun",
+  "anyone": "ano yun",
+  "common stack": "kamusta",
+  "see gain of lease": "sige na please",
+  "Kylie long kung too big": "kailangan ko ng tubig",
+  "i own kona": "ayoko na",
+  "none dito": "nandito",
+  "who we now": "uwi na",
+  "shoes": "sus"
 };
+
 
 function applyCorrections(text) {
   for (const [wrong, correct] of Object.entries(corrections)) {
@@ -165,7 +232,7 @@ async function uploadBufferToGCS(buffer, fileName) {
     resumable: false,
   });
 
-  logHandler(`📦 Uploaded to GCS: gs://${bucketName}/${fileName}`, "success");
+  logHandler(`Uploaded to GCS: gs://${bucketName}/${fileName}`, "success");
 
   return {
     gcsPath: `gs://${bucketName}/${fileName}`,
@@ -182,9 +249,9 @@ async function transcribe(gcsUri) {
       sampleRateHertz: 44100,
       languageCode: 'fil-PH',
       alternativeLanguageCodes: ['en-US'],
-       audioChannelCount: 1, // ✅ align with conversion
+       audioChannelCount: 1, 
       enableSpeakerDiarization: true,
-      diarizationSpeakerCount: 2,
+      diarizationSpeakerCount: 5,
       model: 'default',
     },
   };
@@ -235,11 +302,11 @@ app.post('/login', async (req, res) => {
 });
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
-  console.log("🎤 Transcription request received");
+  console.log("Transcription request received");
   const { uid } = req.body;
 
   if (!req.file) {
-    logHandler("❌ No file uploaded", "error");
+    logHandler("No file uploaded", "error");
     return res.status(400).json({ error: "No file uploaded." });
   }
   if (!uid) {
@@ -252,28 +319,28 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     let finalFilename = originalName;
 
     // Debug logs
-    console.log("📂 Uploaded file info:");
+    console.log("Uploaded file info:");
     console.log("   - originalName:", originalName);
     console.log("   - mimetype:", req.file.mimetype);
     console.log("   - size (bytes):", req.file.size);
 
     // ——— Convert if M4A ———
     if (originalName.toLowerCase().endsWith(".m4a")) {
-      console.log("🔄 Converting M4A to MP3...");
+      console.log("Converting M4A to MP3...");
       finalBuffer = await convertBufferToMP3(req.file.buffer);
       finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
 
       // Save to local (ephemeral, ok for Render)
       const tempPath = path.join(localUploadDir, finalFilename);
       fs.writeFileSync(tempPath, finalBuffer);
-      logHandler(`💾 Temporarily saved: ${tempPath}`, "success");
+      logHandler(`Temporarily saved: ${tempPath}`, "success");
 
-      // ✅ Delete local copy right after upload
+      // Delete local copy right after upload
       try {
         fs.unlinkSync(tempPath);
-        logHandler(`🗑️ Deleted local copy: ${tempPath}`, "system");
+        logHandler(`Deleted local copy: ${tempPath}`, "system");
       } catch (err) {
-        logHandler(`⚠️ Failed to delete local copy: ${err.message}`, "error");
+        logHandler(`Failed to delete local copy: ${err.message}`, "error");
       }
     }
 
@@ -286,21 +353,21 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
 
     // ——— Transcribe from GCS ———
-    console.log("📝 Transcribing from:", gcsPath);
+    console.log("Transcribing from:", gcsPath);
 
-    // 🔄 Start 10 sec interval logs
+    // Start 10 sec interval logs
     const interval = setInterval(() => {
-      console.log("⏳ Transcription still processing...");
+      console.log("Transcription still processing...");
     }, 10000);
 
     let rawTranscript;
     try {
       rawTranscript = await transcribe(gcsPath);
     } finally {
-      clearInterval(interval); // ✅ Always stop interval
+      clearInterval(interval); // Always stop interval
     }
 
-    console.log("✅ Transcription finished!");
+    console.log("Transcription finished!");
     const cleanedTranscript = applyCorrections(rawTranscript);
 
     // ——— Save to Firebase DB ———
@@ -323,7 +390,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       publicUrl,
     });
   } catch (error) {
-    console.error("❌ Transcription Error:", error);
+    console.error("Transcription Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -561,6 +628,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -242,19 +242,22 @@ async function uploadBufferToGCS(buffer, fileName) {
 
 // --- Transcribe audio from GCS URI using Google Speech API ---
 async function transcribe(gcsUri) {
-  const request = {
-    audio: { uri: gcsUri },
-    config: {
-      encoding: 'MP3',
-      sampleRateHertz: 44100,
-      languageCode: 'fil-PH',
-      alternativeLanguageCodes: ['en-US'],
-       audioChannelCount: 1, 
-      enableSpeakerDiarization: true,
-      diarizationSpeakerCount: 5,
-      model: 'default',
-    },
-  };
+  const preferredLanguage = 'fil-PH'; // or dynamically get this from user/input
+
+const request = {
+  audio: { uri: gcsUri },
+  config: {
+    encoding: 'MP3',
+    sampleRateHertz: 44100,
+    languageCode: preferredLanguage === 'fil-PH' ? 'fil-PH' : 'en-US',
+    alternativeLanguageCodes: preferredLanguage === 'fil-PH' ? ['en-US'] : ['fil-PH'],
+    audioChannelCount: 1,
+    enableSpeakerDiarization: true,
+    diarizationSpeakerCount: 5,
+    model: 'default',
+  },
+};
+
   const [operation] = await speechClient.longRunningRecognize(request);
   const [response] = await operation.promise();
 
@@ -628,6 +631,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

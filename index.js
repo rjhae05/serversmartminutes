@@ -373,6 +373,41 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
+// --- Check transcription status ---
+app.get('/check-status/:operationName', async (req, res) => {
+  try {
+    const operationName = req.params.operationName;
+
+    // Check operation progress from Google Speech API
+    const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationName);
+
+    if (operation.done) {
+      let transcript = '';
+
+      // If results are present, extract them
+      if (operation.result && operation.result.results) {
+        const transcriptionResults = operation.result.results;
+
+        transcriptionResults.forEach(result => {
+          if (result.alternatives && result.alternatives[0]) {
+            transcript += result.alternatives[0].transcript + ' ';
+          }
+        });
+      }
+
+      res.json({
+        done: true,
+        result: transcript.trim() || 'No transcription text found.',
+      });
+    } else {
+      // Still in progress
+      res.json({ done: false });
+    }
+  } catch (error) {
+    console.error('[Transcription Status Error]', error.message);
+    res.status(500).json({ error: 'Failed to check transcription status' });
+  }
+});
 
 
 // Get transcript text
@@ -606,6 +641,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

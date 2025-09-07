@@ -416,7 +416,6 @@ app.get('/check-status/:operationName', async (req, res) => {
 });
 
 */
-
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("Transcription request received");
   const { uid } = req.body;
@@ -457,7 +456,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
     console.log("Started transcription operation:", operationId);
 
-    // Save operation status to Firebase
+    // Save initial operation state to Firebase
     await db.ref(`operations/${operationId}`).set({
       uid,
       gcsPath,
@@ -466,62 +465,55 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       createdAt: Date.now(),
     });
 
-    // Return operation ID immediately
-    res.json({ success: true, operationId });
+    // Polling function to check status every 3 seconds
+    const pollInterval = 3000; // 3 seconds
+    const maxPolls = 20; // max ~1 minute timeout
+    let polls = 0;
+
+    const pollStatus = async () => {
+      polls++;
+      const [op] = await speechClient.checkLongRunningRecognizeProgress(operationId);
+
+      if (op.done) {
+        // Extract transcript
+        const results = op?.result?.results;
+        if (!Array.isArray(results)) {
+          console.error("[Polling] Invalid results format:", JSON.stringify(op, null, 2));
+          return res.status(500).json({ error: "Invalid transcription result format" });
+        }
+
+        let transcript = '';
+        results.forEach(result => {
+          if (result.alternatives && result.alternatives.length > 0) {
+            transcript += result.alternatives[0].transcript + ' ';
+          }
+        });
+
+        const cleaned = applyCorrections(transcript.trim());
+
+        // Save final result to Firebase
+        await db.ref(`operations/${operationId}`).set({
+          status: "Completed",
+          transcription: cleaned,
+          completedAt: Date.now(),
+        });
+
+        return res.json({ success: true, done: true, result: cleaned });
+      } else if (polls >= maxPolls) {
+        // Timeout reached, return operationId for client to poll later
+        return res.json({ success: true, done: false, operationId, message: "Processing timeout. Please check status later." });
+      } else {
+        // Wait and poll again
+        setTimeout(pollStatus, pollInterval);
+      }
+    };
+
+    // Start polling
+    pollStatus();
 
   } catch (error) {
     console.error("Transcription start error:", error.message);
     res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.get('/check-status/:operationId', async (req, res) => {
-  const operationId = req.params.operationId;
-
-  try {
-    const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationId);
-
-    if (!operation.done) {
-      return res.json({ done: false });
-    }
-
-    // Check Firebase for cached transcription
-    const snapshot = await db.ref(`operations/${operationId}`).once('value');
-    const data = snapshot.val();
-
-    if (data && data.status === "Completed") {
-      return res.json({ done: true, result: data.transcription });
-    }
-
-    // Correctly extract results from operation.result
-    const results = operation?.result?.results;
-
-    if (!Array.isArray(results)) {
-      console.error("[Check Status] Invalid or missing results:", JSON.stringify(operation, null, 2));
-      return res.status(500).json({ error: "Invalid transcription result format" });
-    }
-
-    let transcript = '';
-    results.forEach(result => {
-      if (result.alternatives && result.alternatives.length > 0) {
-        transcript += result.alternatives[0].transcript + ' ';
-      }
-    });
-
-    const cleaned = applyCorrections(transcript.trim());
-
-    // Save result to Firebase
-    await db.ref(`operations/${operationId}`).set({
-      status: "Completed",
-      transcription: cleaned,
-      completedAt: Date.now(),
-    });
-
-    res.json({ done: true, result: cleaned });
-
-  } catch (error) {
-    console.error('[Transcription Status Error]', error);
-    res.status(500).json({ error: 'Failed to check transcription status' });
   }
 });
 
@@ -759,6 +751,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

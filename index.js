@@ -474,6 +474,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 app.get('/check-status/:operationId', async (req, res) => {
   const operationId = req.params.operationId;
 
@@ -484,40 +485,31 @@ app.get('/check-status/:operationId', async (req, res) => {
       return res.json({ done: false });
     }
 
-    // Check Firebase first
+    // Kung previously completed din sa DB:
     const snapshot = await db.ref(`operations/${operationId}`).once('value');
     const data = snapshot.val();
-
     if (data && data.status === "Completed") {
       return res.json({ done: true, result: data.transcription });
     }
 
-    // Defensive parsing
+    // I-extract ang transcript nang tama:
     let transcript = '';
+    const response = operation.result && operation.result.response;
+    const results = response && Array.isArray(response.results) ? response.results : null;
 
-    if (
-      operation &&
-      typeof operation === 'object' &&
-      operation.result &&
-      typeof operation.result === 'object' &&
-      Array.isArray(operation.result.results)
-    ) {
-      operation.result.results.forEach(result => {
-        if (result.alternatives && result.alternatives[0]) {
-          transcript += result.alternatives[0].transcript + ' ';
-        }
-      });
-    } else {
-      console.error("[Check Status] Unexpected operation.result structure:", JSON.stringify(operation, null, 2));
-      return res.status(500).json({
-        error: "Invalid transcription result format",
-        debug: operation
-      });
+    if (!results) {
+      console.error("[Check Status] Unexpected result format:", JSON.stringify(operation, null, 2));
+      return res.status(500).json({ error: "Invalid transcription result format" });
     }
+
+    results.forEach(r => {
+      if (r.alternatives && r.alternatives[0]) {
+        transcript += r.alternatives[0].transcript + ' ';
+      }
+    });
 
     const cleaned = applyCorrections(transcript.trim());
 
-    // Save to Firebase
     await db.ref(`operations/${operationId}`).set({
       status: "Completed",
       transcription: cleaned,
@@ -527,10 +519,11 @@ app.get('/check-status/:operationId', async (req, res) => {
     res.json({ done: true, result: cleaned });
 
   } catch (error) {
-    console.error('[Transcription Status Error]', error.message);
+    console.error('[Transcription Status Error]', error);
     res.status(500).json({ error: 'Failed to check transcription status' });
   }
 });
+
 
 
 
@@ -765,6 +758,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

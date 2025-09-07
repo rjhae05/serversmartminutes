@@ -379,6 +379,59 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
 */
 
+app.get("/transcribe/status/:operationId", async (req, res) => {
+  const { operationId } = req.params;
+
+  try {
+    const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationId);
+
+    if (!operation.done) {
+      // Still processing
+      return res.json({ done: false, status: "Processing" });
+    }
+
+    // Transcription done - extract transcript
+    const results = operation?.result?.results || [];
+    let transcript = '';
+    results.forEach(result => {
+      if (result.alternatives && result.alternatives.length > 0) {
+        transcript += result.alternatives[0].transcript + ' ';
+      }
+    });
+
+    const cleaned = applyCorrections(transcript.trim());
+
+    // Update final result to Firebase DB
+    await db.ref(`operations/${operationId}`).update({
+      status: "Completed",
+      transcription: cleaned,
+      completedAt: Date.now(),
+    });
+
+    // Also save under user transcriptions collection (optional)
+    const opDataSnapshot = await db.ref(`operations/${operationId}`).once('value');
+    const opData = opDataSnapshot.val();
+    if (opData?.uid) {
+      const userTransRef = db.ref(`transcriptions/${opData.uid}`).push();
+      await userTransRef.set({
+        filename: opData.filename,
+        text: cleaned,
+        gcsUri: opData.gcsPath,
+        publicUrl: opData.publicUrl,
+        status: "Completed",
+        createdAt: Date.now(),
+      });
+    }
+
+    res.json({ done: true, transcription: cleaned });
+
+  } catch (error) {
+    console.error("Status check error:", error);
+    res.status(500).json({ error: "Failed to check transcription status" });
+  }
+});
+
+
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("Transcription request received");
   const { uid } = req.body;
@@ -699,6 +752,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -280,6 +280,7 @@ app.post('/login', async (req, res) => {
 });
 
 
+/*
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("Transcription request received");
@@ -376,11 +377,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
-
-
-
-
-
+*/
 
 
 // Get transcript text
@@ -614,6 +611,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -474,19 +474,17 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
 app.get('/check-status/:operationId', async (req, res) => {
   const operationId = req.params.operationId;
 
   try {
     const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationId);
 
-    // Not done yet
     if (!operation.done) {
       return res.json({ done: false });
     }
 
-    // Already completed — check Firebase first
+    // Check Firebase first
     const snapshot = await db.ref(`operations/${operationId}`).once('value');
     const data = snapshot.val();
 
@@ -494,19 +492,27 @@ app.get('/check-status/:operationId', async (req, res) => {
       return res.json({ done: true, result: data.transcription });
     }
 
-    // Extract result from operation
+    // Defensive parsing
     let transcript = '';
 
-    // ✅ Safe check before iterating
-    if (operation.result && Array.isArray(operation.result.results)) {
+    if (
+      operation &&
+      typeof operation === 'object' &&
+      operation.result &&
+      typeof operation.result === 'object' &&
+      Array.isArray(operation.result.results)
+    ) {
       operation.result.results.forEach(result => {
         if (result.alternatives && result.alternatives[0]) {
           transcript += result.alternatives[0].transcript + ' ';
         }
       });
     } else {
-      console.error("[Check Status] Invalid result structure:", operation.result);
-      return res.status(500).json({ error: "Invalid transcription result format" });
+      console.error("[Check Status] Unexpected operation.result structure:", JSON.stringify(operation, null, 2));
+      return res.status(500).json({
+        error: "Invalid transcription result format",
+        debug: operation
+      });
     }
 
     const cleaned = applyCorrections(transcript.trim());
@@ -525,6 +531,7 @@ app.get('/check-status/:operationId', async (req, res) => {
     res.status(500).json({ error: 'Failed to check transcription status' });
   }
 });
+
 
 
 // Get transcript text
@@ -758,6 +765,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -278,6 +278,8 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error during login' });
   }
 });
+
+/*
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("Transcription request received");
@@ -374,6 +376,9 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
+*/
+
+/*
 // --- Check transcription status ---
 app.get('/check-status/:operationName', async (req, res) => {
   try {
@@ -410,6 +415,111 @@ app.get('/check-status/:operationName', async (req, res) => {
   }
 });
 
+*/
+
+app.post("/transcribe", upload.single("file"), async (req, res) => {
+  console.log("Transcription request received");
+  const { uid } = req.body;
+
+  if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+  if (!uid) return res.status(400).json({ error: "UID required." });
+
+  try {
+    const originalName = req.file.originalname;
+    let finalBuffer = req.file.buffer;
+    let finalFilename = originalName;
+
+    // Convert if M4A
+    if (originalName.toLowerCase().endsWith(".m4a")) {
+      console.log("Converting M4A to MP3...");
+      finalBuffer = await convertBufferToMP3(req.file.buffer);
+      finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
+    }
+
+    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
+    const fileName = `${Date.now()}-${safeName}.mp3`;
+
+    // Upload to GCS
+    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
+    console.log("Uploaded to GCS:", gcsPath);
+
+    // Start transcription (non-blocking)
+    const request = {
+      audio: { uri: gcsPath },
+      config: {
+        encoding: "MP3",
+        languageCode: "en-US",
+      },
+    };
+
+    const [operation] = await speechClient.longRunningRecognize(request);
+    const operationId = operation.name;
+
+    console.log("Started transcription operation:", operationId);
+
+    // Save operation status to Firebase
+    await db.ref(`operations/${operationId}`).set({
+      uid,
+      gcsPath,
+      publicUrl,
+      status: "Processing",
+      createdAt: Date.now(),
+    });
+
+    // Return operation ID immediately
+    res.json({ success: true, operationId });
+
+  } catch (error) {
+    console.error("Transcription start error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
+app.get('/check-status/:operationId', async (req, res) => {
+  const operationId = req.params.operationId;
+
+  try {
+    const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationId);
+
+    if (!operation.done) {
+      return res.json({ done: false });
+    }
+
+    // Already completed — check if saved to Firebase
+    const snapshot = await db.ref(`operations/${operationId}`).once('value');
+    const data = snapshot.val();
+
+    if (data && data.status === "Completed") {
+      return res.json({ done: true, result: data.transcription });
+    }
+
+    // Extract result from operation
+    let transcript = '';
+    if (operation.result && operation.result.results) {
+      operation.result.results.forEach(result => {
+        if (result.alternatives && result.alternatives[0]) {
+          transcript += result.alternatives[0].transcript + ' ';
+        }
+      });
+    }
+
+    const cleaned = applyCorrections(transcript.trim());
+
+    // Save final result to Firebase
+    await db.ref(`operations/${operationId}`).update({
+      status: "Completed",
+      transcription: cleaned,
+      completedAt: Date.now(),
+    });
+
+    res.json({ done: true, result: cleaned });
+
+  } catch (error) {
+    console.error('[Transcription Status Error]', error.message);
+    res.status(500).json({ error: 'Failed to check transcription status' });
+  }
+});
 
 // Get transcript text
 app.get('/transcript', (req, res) => {
@@ -642,6 +752,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

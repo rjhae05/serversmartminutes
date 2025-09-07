@@ -258,8 +258,8 @@ const request = {
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
 
-    // Set custom timeout for long transcription (e.g., 5 minutes = 300000 ms)
-  res.setTimeout(300000, () => {
+    // Set custom timeout for long transcription (e.g., 20 minutes = 1200000 ms)
+  res.setTimeout(1200000, () => {
     console.warn("Request timed out.");
     res.status(503).json({ success: false, message: "Transcription timed out." });
   });
@@ -592,6 +592,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

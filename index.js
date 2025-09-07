@@ -279,7 +279,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-/*
+
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("Transcription request received");
@@ -376,160 +376,8 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
-*/
 
-/*
-// --- Check transcription status ---
-app.get('/check-status/:operationName', async (req, res) => {
-  try {
-    const operationName = req.params.operationName;
 
-    // Check operation progress from Google Speech API
-    const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationName);
-
-    if (operation.done) {
-      let transcript = '';
-
-      // If results are present, extract them
-      if (operation.result && operation.result.results) {
-        const transcriptionResults = operation.result.results;
-
-        transcriptionResults.forEach(result => {
-          if (result.alternatives && result.alternatives[0]) {
-            transcript += result.alternatives[0].transcript + ' ';
-          }
-        });
-      }
-
-      res.json({
-        done: true,
-        result: transcript.trim() || 'No transcription text found.',
-      });
-    } else {
-      // Still in progress
-      res.json({ done: false });
-    }
-  } catch (error) {
-    console.error('[Transcription Status Error]', error.message);
-    res.status(500).json({ error: 'Failed to check transcription status' });
-  }
-});
-
-*/
-app.post("/transcribe", upload.single("file"), async (req, res) => {
-  console.log("Transcription request received");
-  const { uid } = req.body;
-
-  if (!req.file) return res.status(400).json({ error: "No file uploaded." });
-  if (!uid) return res.status(400).json({ error: "UID required." });
-
-  try {
-    const originalName = req.file.originalname;
-    let finalBuffer = req.file.buffer;
-    let finalFilename = originalName;
-
-    // Convert if M4A
-    if (originalName.toLowerCase().endsWith(".m4a")) {
-      console.log("Converting M4A to MP3...");
-      finalBuffer = await convertBufferToMP3(req.file.buffer);
-      finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
-    }
-
-    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
-    const fileName = `${Date.now()}-${safeName}.mp3`;
-
-    // Upload to GCS
-    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
-    console.log("Uploaded to GCS:", gcsPath);
-
-    // Start transcription (non-blocking)
-    const request = {
-      audio: { uri: gcsPath },
-      config: {
-        encoding: "MP3",
-        languageCode: "en-US",
-      },
-    };
-
-    const [operation] = await speechClient.longRunningRecognize(request);
-    const operationId = operation.name;
-
-    console.log("Started transcription operation:", operationId);
-
-    // Save initial operation state to Firebase
-    await db.ref(`operations/${operationId}`).set({
-      uid,
-      gcsPath,
-      publicUrl,
-      status: "Processing",
-      createdAt: Date.now(),
-    });
-
-    // Polling params
-    const pollInterval = 3000; // 3 seconds
-    const maxPolls = 20; // max ~1 minute timeout
-
-    // Poll function returns a promise that resolves when done or timeout
-    const pollStatus = () => new Promise(async (resolve, reject) => {
-      let polls = 0;
-
-      const poll = async () => {
-        try {
-          polls++;
-          const [op] = await speechClient.checkLongRunningRecognizeProgress(operationId);
-
-          if (op.done) {
-            const results = op?.result?.results;
-            if (!Array.isArray(results)) {
-              console.error("[Polling] Invalid results format:", JSON.stringify(op, null, 2));
-              return reject(new Error("Invalid transcription result format"));
-            }
-
-            let transcript = '';
-            results.forEach(result => {
-              if (result.alternatives && result.alternatives.length > 0) {
-                transcript += result.alternatives[0].transcript + ' ';
-              }
-            });
-
-            const cleaned = applyCorrections(transcript.trim());
-
-            // Save final result to Firebase
-            await db.ref(`operations/${operationId}`).set({
-              status: "Completed",
-              transcription: cleaned,
-              completedAt: Date.now(),
-            });
-
-            return resolve({ done: true, result: cleaned });
-          } else if (polls >= maxPolls) {
-            // Timeout reached
-            return resolve({ done: false, operationId, message: "Processing timeout. Please check status later." });
-          } else {
-            setTimeout(poll, pollInterval);
-          }
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      poll();
-    });
-
-    // Await polling promise
-    const pollResult = await pollStatus();
-
-    if (pollResult.done) {
-      res.json({ success: true, done: true, result: pollResult.result });
-    } else {
-      res.json({ success: true, done: false, operationId: pollResult.operationId, message: pollResult.message });
-    }
-
-  } catch (error) {
-    console.error("Transcription start error:", error.message);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
 
 
@@ -766,6 +614,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

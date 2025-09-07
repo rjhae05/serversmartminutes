@@ -225,7 +225,7 @@ const request = {
   config: {
     encoding: 'MP3',
     sampleRateHertz: 44100,
-    languageCode: 'en-US', //fil-PH
+    languageCode: 'fil-PH', //fil-PH
     audioChannelCount: 1,
     enableSpeakerDiarization: true,
     diarizationSpeakerCount: 5,
@@ -585,6 +585,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

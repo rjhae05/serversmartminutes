@@ -475,18 +475,18 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
-
 app.get('/check-status/:operationId', async (req, res) => {
   const operationId = req.params.operationId;
 
   try {
     const [operation] = await speechClient.checkLongRunningRecognizeProgress(operationId);
 
+    // Not done yet
     if (!operation.done) {
       return res.json({ done: false });
     }
 
-    // Already completed — check if saved to Firebase
+    // Already completed — check Firebase first
     const snapshot = await db.ref(`operations/${operationId}`).once('value');
     const data = snapshot.val();
 
@@ -496,18 +496,23 @@ app.get('/check-status/:operationId', async (req, res) => {
 
     // Extract result from operation
     let transcript = '';
-    if (operation.result && operation.result.results) {
+
+    // ✅ Safe check before iterating
+    if (operation.result && Array.isArray(operation.result.results)) {
       operation.result.results.forEach(result => {
         if (result.alternatives && result.alternatives[0]) {
           transcript += result.alternatives[0].transcript + ' ';
         }
       });
+    } else {
+      console.error("[Check Status] Invalid result structure:", operation.result);
+      return res.status(500).json({ error: "Invalid transcription result format" });
     }
 
     const cleaned = applyCorrections(transcript.trim());
 
-    // Save final result to Firebase
-    await db.ref(`operations/${operationId}`).update({
+    // Save to Firebase
+    await db.ref(`operations/${operationId}`).set({
       status: "Completed",
       transcription: cleaned,
       completedAt: Date.now(),
@@ -520,6 +525,7 @@ app.get('/check-status/:operationId', async (req, res) => {
     res.status(500).json({ error: 'Failed to check transcription status' });
   }
 });
+
 
 // Get transcript text
 app.get('/transcript', (req, res) => {
@@ -752,6 +758,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

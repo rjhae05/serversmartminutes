@@ -229,7 +229,7 @@ const request = {
     audioChannelCount: 1,
     enableSpeakerDiarization: true,
     diarizationSpeakerCount: 5,
-    model: 'default',
+    model: 'latest_long',
   },
 };
 
@@ -585,6 +585,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

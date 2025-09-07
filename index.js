@@ -379,6 +379,94 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
 */
 
+app.post("/transcribe", upload.single("file"), async (req, res) => {
+  console.log("Transcription request received");
+  const { uid } = req.body;
+
+  if (!req.file) {
+    logHandler("No file uploaded", "error");
+    return res.status(400).json({ error: "No file uploaded." });
+  }
+  if (!uid) {
+    return res.status(400).json({ success: false, message: "UID required" });
+  }
+
+  try {
+    const originalName = req.file.originalname;
+    let finalBuffer = req.file.buffer;
+    let finalFilename = originalName;
+
+    // Debug logs
+    console.log("Uploaded file info:");
+    console.log("   - originalName:", originalName);
+    console.log("   - mimetype:", req.file.mimetype);
+    console.log("   - size (bytes):", req.file.size);
+
+    // Convert if M4A
+    if (originalName.toLowerCase().endsWith(".m4a")) {
+      console.log("Converting M4A to MP3...");
+      finalBuffer = await convertBufferToMP3(req.file.buffer);
+      finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
+
+      // Save local copy (optional)
+      const tempPath = path.join(localUploadDir, finalFilename);
+      fs.writeFileSync(tempPath, finalBuffer);
+      logHandler(`Temporarily saved: ${tempPath}`, "success");
+
+      try {
+        fs.unlinkSync(tempPath);
+        logHandler(`Deleted local copy: ${tempPath}`, "system");
+      } catch (err) {
+        logHandler(`Failed to delete local copy: ${err.message}`, "error");
+      }
+    }
+
+    // Generate safe filename
+    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
+    const fileName = `${Date.now()}-${safeName}.mp3`;
+
+    // Upload to GCS
+    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
+    console.log("Uploaded to GCS:", gcsPath);
+
+    // Start transcription asynchronously (longRunningRecognize)
+    const request = {
+      audio: { uri: gcsPath },
+      config: {
+        encoding: "MP3",
+        languageCode: "en-US",
+      },
+    };
+
+    const [operation] = await speechClient.longRunningRecognize(request);
+    const operationId = operation.name;
+
+    // Save initial transcription operation to Firebase DB
+    await db.ref(`operations/${operationId}`).set({
+      uid,
+      gcsPath,
+      publicUrl,
+      status: "Processing",
+      createdAt: Date.now(),
+      filename: fileName,
+    });
+
+    // Immediately respond with operationId to client
+    res.json({
+      success: true,
+      message: "Transcription started",
+      operationId,
+      audioFileName: fileName,
+      gcsPath,
+      publicUrl,
+    });
+  } catch (error) {
+    console.error("Transcription Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
 
 // Get transcript text
 app.get('/transcript', (req, res) => {
@@ -611,6 +699,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

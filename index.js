@@ -347,6 +347,7 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
 
     console.log("Transcription finished!");
     const cleanedTranscript = applyCorrections(rawTranscript);
+    console.log(rawTranscript);
 
     // ——— Save to Firebase DB ———
     const newRef = db.ref(`transcriptions/${uid}`).push();
@@ -641,6 +642,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

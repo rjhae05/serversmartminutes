@@ -465,57 +465,72 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
       createdAt: Date.now(),
     });
 
-    // Polling function to check status every 3 seconds
+    // Polling params
     const pollInterval = 3000; // 3 seconds
     const maxPolls = 20; // max ~1 minute timeout
-    let polls = 0;
 
-    const pollStatus = async () => {
-      polls++;
-      const [op] = await speechClient.checkLongRunningRecognizeProgress(operationId);
+    // Poll function returns a promise that resolves when done or timeout
+    const pollStatus = () => new Promise(async (resolve, reject) => {
+      let polls = 0;
 
-      if (op.done) {
-        // Extract transcript
-        const results = op?.result?.results;
-        if (!Array.isArray(results)) {
-          console.error("[Polling] Invalid results format:", JSON.stringify(op, null, 2));
-          return res.status(500).json({ error: "Invalid transcription result format" });
-        }
+      const poll = async () => {
+        try {
+          polls++;
+          const [op] = await speechClient.checkLongRunningRecognizeProgress(operationId);
 
-        let transcript = '';
-        results.forEach(result => {
-          if (result.alternatives && result.alternatives.length > 0) {
-            transcript += result.alternatives[0].transcript + ' ';
+          if (op.done) {
+            const results = op?.result?.results;
+            if (!Array.isArray(results)) {
+              console.error("[Polling] Invalid results format:", JSON.stringify(op, null, 2));
+              return reject(new Error("Invalid transcription result format"));
+            }
+
+            let transcript = '';
+            results.forEach(result => {
+              if (result.alternatives && result.alternatives.length > 0) {
+                transcript += result.alternatives[0].transcript + ' ';
+              }
+            });
+
+            const cleaned = applyCorrections(transcript.trim());
+
+            // Save final result to Firebase
+            await db.ref(`operations/${operationId}`).set({
+              status: "Completed",
+              transcription: cleaned,
+              completedAt: Date.now(),
+            });
+
+            return resolve({ done: true, result: cleaned });
+          } else if (polls >= maxPolls) {
+            // Timeout reached
+            return resolve({ done: false, operationId, message: "Processing timeout. Please check status later." });
+          } else {
+            setTimeout(poll, pollInterval);
           }
-        });
+        } catch (err) {
+          reject(err);
+        }
+      };
 
-        const cleaned = applyCorrections(transcript.trim());
+      poll();
+    });
 
-        // Save final result to Firebase
-        await db.ref(`operations/${operationId}`).set({
-          status: "Completed",
-          transcription: cleaned,
-          completedAt: Date.now(),
-        });
+    // Await polling promise
+    const pollResult = await pollStatus();
 
-        return res.json({ success: true, done: true, result: cleaned });
-      } else if (polls >= maxPolls) {
-        // Timeout reached, return operationId for client to poll later
-        return res.json({ success: true, done: false, operationId, message: "Processing timeout. Please check status later." });
-      } else {
-        // Wait and poll again
-        setTimeout(pollStatus, pollInterval);
-      }
-    };
-
-    // Start polling
-    pollStatus();
+    if (pollResult.done) {
+      res.json({ success: true, done: true, result: pollResult.result });
+    } else {
+      res.json({ success: true, done: false, operationId: pollResult.operationId, message: pollResult.message });
+    }
 
   } catch (error) {
     console.error("Transcription start error:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 
 
 
@@ -751,6 +766,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

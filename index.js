@@ -254,7 +254,7 @@ const request = {
 }
 
 // --- Routes ---
-
+/*
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
 
@@ -358,6 +358,129 @@ app.post("/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
+
+*/
+
+app.post("/transcribe", upload.single("file"), async (req, res) => {
+  console.log("Transcription job received");
+
+  const { uid } = req.body;
+  if (!req.file || !uid) {
+    return res.status(400).json({ success: false, message: "Missing file or UID" });
+  }
+
+  try {
+    const originalName = req.file.originalname;
+    let finalBuffer = req.file.buffer;
+    let finalFilename = originalName;
+
+    if (originalName.toLowerCase().endsWith(".m4a")) {
+      finalBuffer = await convertBufferToMP3(finalBuffer);
+      finalFilename = originalName.replace(/\.[^/.]+$/, "") + ".mp3";
+    }
+
+    const safeName = finalFilename.replace(/\.[^/.]+$/, "");
+    const fileName = `${Date.now()}-${safeName}.mp3`;
+
+    const { gcsPath, publicUrl } = await uploadBufferToGCS(finalBuffer, fileName);
+
+    // Create job record in Firebase
+    const jobRef = db.ref(`transcriptionJobs/${uid}`).push();
+    const jobId = jobRef.key;
+
+    await jobRef.set({
+      uid,
+      filename: fileName,
+      gcsUri: gcsPath,
+      publicUrl,
+      status: "Pending",
+      createdAt: Date.now(),
+    });
+
+    // ——— Try fast transcription (max 60 sec) ———
+    const FAST_TIMEOUT = 60000; // 1 minute
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), FAST_TIMEOUT)
+    );
+
+    try {
+      const rawTranscript = await Promise.race([transcribe(gcsPath), timeoutPromise]);
+      const cleanedTranscript = applyCorrections(rawTranscript);
+
+      await jobRef.update({
+        text: cleanedTranscript,
+        status: "Completed",
+        completedAt: Date.now(),
+      });
+
+      return res.status(200).json({
+        success: true,
+        jobId,
+        transcription: cleanedTranscript,
+        gcsPath,
+        publicUrl,
+      });
+
+    } catch (err) {
+      if (err.message === "Timeout") {
+        console.warn(`[Job ${jobId}] Transcription timed out. Processing in background.`);
+        processTranscriptionJob(jobId, uid, gcsPath, fileName, jobRef);
+
+        return res.status(202).json({
+          success: true,
+          jobId,
+          message: "Transcription is taking longer. Please check status later using /status/:uid/:jobId",
+        });
+      } else {
+        throw err; // other errors
+      }
+    }
+
+  } catch (error) {
+    console.error("Transcription Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+async function processTranscriptionJob(jobId, uid, gcsPath, fileName, jobRef) {
+  console.log(`[Job ${jobId}] Started transcription...`);
+
+  try {
+    const rawTranscript = await transcribe(gcsPath);
+    const cleanedTranscript = applyCorrections(rawTranscript);
+
+    await jobRef.update({
+      text: cleanedTranscript,
+      status: "Completed",
+      completedAt: Date.now(),
+    });
+
+    console.log(`[Job ${jobId}] Transcription completed!`);
+  } catch (err) {
+    console.error(`[Job ${jobId}] Failed: ${err.message}`);
+    await jobRef.update({
+      status: "Failed",
+      error: err.message,
+    });
+  }
+}
+
+app.get("/status/:uid/:jobId", async (req, res) => {
+  const { uid, jobId } = req.params;
+
+  try {
+    const snapshot = await db.ref(`transcriptionJobs/${uid}/${jobId}`).once("value");
+
+    if (!snapshot.exists()) {
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
+
+    res.json({ success: true, job: snapshot.val() });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 
 
@@ -592,6 +715,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

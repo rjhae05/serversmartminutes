@@ -485,31 +485,32 @@ app.get('/check-status/:operationId', async (req, res) => {
       return res.json({ done: false });
     }
 
-    // Kung previously completed din sa DB:
+    // Check Firebase for cached transcription
     const snapshot = await db.ref(`operations/${operationId}`).once('value');
     const data = snapshot.val();
+
     if (data && data.status === "Completed") {
       return res.json({ done: true, result: data.transcription });
     }
 
-    // I-extract ang transcript nang tama:
-    let transcript = '';
-    const response = operation.result && operation.result.response;
-    const results = response && Array.isArray(response.results) ? response.results : null;
+    // Correctly extract results from operation.result
+    const results = operation?.result?.results;
 
-    if (!results) {
-      console.error("[Check Status] Unexpected result format:", JSON.stringify(operation, null, 2));
+    if (!Array.isArray(results)) {
+      console.error("[Check Status] Invalid or missing results:", JSON.stringify(operation, null, 2));
       return res.status(500).json({ error: "Invalid transcription result format" });
     }
 
-    results.forEach(r => {
-      if (r.alternatives && r.alternatives[0]) {
-        transcript += r.alternatives[0].transcript + ' ';
+    let transcript = '';
+    results.forEach(result => {
+      if (result.alternatives && result.alternatives.length > 0) {
+        transcript += result.alternatives[0].transcript + ' ';
       }
     });
 
     const cleaned = applyCorrections(transcript.trim());
 
+    // Save result to Firebase
     await db.ref(`operations/${operationId}`).set({
       status: "Completed",
       transcription: cleaned,
@@ -758,6 +759,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -255,32 +255,6 @@ const request = {
 
 // --- Routes ---
 
-// Login endpoint
-app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ success: false, message: 'Email/password required' });
-  }
-
-  try {
-    const snapshot = await db.ref('Users').once('value');
-    const users = snapshot.val() || {};
-    const userEntry = Object.entries(users).find(([_, u]) => u.email === email && u.password === password);
-
-    if (userEntry) {
-      const userId = userEntry[0];
-      return res.json({ success: true, message: 'Login successful', uid: userId });
-    } else {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-  } catch (error) {
-    console.error('Login Error:', error);
-    res.status(500).json({ success: false, message: 'Error during login' });
-  }
-});
-
-
-
 // ——— TRANSCRIBE ROUTE (upload + convert + GCS + transcript) ———
 app.post("/transcribe", upload.single("file"), async (req, res) => {
   console.log("Transcription request received");
@@ -611,6 +585,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

@@ -113,31 +113,7 @@ const auth = new google.auth.GoogleAuth({
 let driveClient;
 const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
 
-(async () => {
-  try {
-    const authClient = await auth.getClient();
-    driveClient = google.drive({ version: 'v3', auth: authClient });
-    await testDriveAccess();
-  } catch (error) {
-    console.error('Drive Auth Init Error:', error);
-  }
-})();
 
-async function testDriveAccess() {
-  try {
-    const res = await driveClient.files.list({
-      q: `'${parentFolderId}' in parents`,
-      fields: 'files(id, name)',
-    });
-    if (res.data.files?.length) {
-      console.log(`Drive folder accessible. Files: ${res.data.files.map(f => f.name).join(', ')}`);
-    } else {
-      console.log('Drive folder accessible but empty.');
-    }
-  } catch (error) {
-    console.error('Drive access test failed:', error.message);
-  }
-}
 
 // --- Auto-correction mappings ---
 const corrections = {
@@ -630,6 +606,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

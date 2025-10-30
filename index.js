@@ -121,6 +121,26 @@ const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
   await testListFiles();
 })();
 
+// ——— Test if service account can list files ———
+async function testListFiles() {
+  try {
+    const res = await drive.files.list({
+      q: `'${parentFolderId}' in parents`,
+      fields: 'files(id, name)',
+    });
+
+    if (!res.data.files.length) {
+      console.log('📂 Folder accessible but empty.');
+    } else {
+      console.log('✅ Folder accessible. Files:');
+      res.data.files.forEach(file => console.log(`📄 ${file.name} (ID: ${file.id})`));
+    }
+  } catch (err) {
+    console.error('❌ Cannot list files:', err.response?.data || err.message);
+  }
+}
+
+
 // --- Auto-correction mappings ---
 const corrections = {
   "made your": "medyo",
@@ -721,3 +741,4 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+

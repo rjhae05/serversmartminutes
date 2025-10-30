@@ -113,7 +113,13 @@ const auth = new google.auth.GoogleAuth({
 let driveClient;
 const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
 
-driveClient = google.drive({ version: 'v3', auth });
+(async () => {
+  const authClient = await auth.getClient();
+  drive = google.drive({ version: 'v3', auth: authClient });
+
+  // Test folder access on start
+  await testListFiles();
+})();
 
 // --- Auto-correction mappings ---
 const corrections = {
@@ -715,6 +721,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 
 
 

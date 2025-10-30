@@ -110,7 +110,7 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
 
-let driveClient;
+let drive;
 const parentFolderId = '1S1us2ikMWxmrfraOnHbAUNQqMSXywfbr';
 
 (async () => {
@@ -674,7 +674,7 @@ Closing:
 
       const media = { mimeType: fileMetadata.mimeType, body: bufferStream };
 
-      const driveRes = await driveClient.files.create({
+      const driveRes = await drive.files.create({
         requestBody: fileMetadata,
         media,
         fields: 'id',
@@ -683,7 +683,7 @@ Closing:
       const fileId = driveRes.data.id;
 
       // Make file public
-      await driveClient.permissions.create({
+      await drive.permissions.create({
         fileId,
         requestBody: { role: 'reader', type: 'anyone' },
       });
@@ -741,6 +741,7 @@ app.get('/allminutes/:id', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+
 
 
 
